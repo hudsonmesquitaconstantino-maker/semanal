@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Semanal Guimas</title>
+<style>
+:root{
+  --bg:#EEF1F4; --card:#FFFFFF; --ink:#16202A; --muted:#6B7684; --line:#E2E7EC;
+  --green:#0E9F5D; --green-bg:#E5F6EC; --red:#C93A4A; --red-bg:#FBEAEC;
+  --blue:#003399; --primary:#128C50; --radius:14px;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  font-size:16px;overscroll-behavior-y:none}
+body{padding-bottom:110px}
+
+/* ===== Header ===== */
+header{position:sticky;top:0;z-index:50;background:rgba(238,241,244,.92);
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);padding:12px 16px 10px;
+  padding-top:calc(12px + env(safe-area-inset-top))}
+.hrow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.htitle{font-size:20px;font-weight:800;letter-spacing:.5px}
+.htitle input{border:none;background:transparent;font:inherit;color:var(--primary);
+  width:86px;padding:2px 4px;border-radius:6px}
+.htitle input:focus{outline:2px solid var(--primary);background:#fff}
+.saved{font-size:12px;color:var(--muted);opacity:0;transition:opacity .3s}
+.saved.show{opacity:1;color:var(--green)}
+.totais{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
+.tot{background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:8px 10px;text-align:center;cursor:pointer;-webkit-user-select:none;user-select:none}
+.tot.active{box-shadow:0 0 0 2px var(--ink) inset}
+.tot.g.active{box-shadow:0 0 0 2px var(--green) inset;background:var(--green-bg)}
+.tot.r.active{box-shadow:0 0 0 2px var(--red) inset;background:var(--red-bg)}
+.filterbar{display:none;align-items:center;justify-content:space-between;gap:8px;
+  margin-top:8px;padding:8px 10px;border-radius:10px;font-size:13px;font-weight:700}
+.filterbar.on{display:flex}
+.filterbar.pend{background:var(--red-bg);color:var(--red)}
+.filterbar.paid{background:var(--green-bg);color:var(--green)}
+.filterbar button{border:none;border-radius:8px;padding:7px 12px;font-size:13px;
+  font-weight:800;cursor:pointer;background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(22,32,42,.15);flex-shrink:0}
+.tot .lb{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.tot .vl{font-family:var(--mono);font-weight:700;font-size:14px;margin-top:2px;white-space:nowrap}
+.tot.g .vl{color:var(--green)} .tot.r .vl{color:var(--red)}
+
+/* ===== Cards ===== */
+main{padding:14px 14px 0;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:12px;box-shadow:0 1px 2px rgba(22,32,42,.05)}
+.card-head{display:flex;align-items:center;gap:10px}
+.plate{flex-shrink:0;width:88px;border:2px solid #2b2b2b;border-radius:6px;
+  overflow:hidden;background:#fff;text-align:center}
+.plate .bar{background:var(--blue);height:9px}
+.plate input{width:100%;border:none;text-align:center;font-family:var(--mono);
+  font-weight:800;font-size:13px;letter-spacing:.04em;padding:4px 1px;text-transform:uppercase;color:#1a1a1a}
+.plate input:focus{outline:none;background:#fffbe6}
+.who{flex:1;min-width:0}
+.who input{border:none;background:transparent;width:100%;padding:2px 4px;border-radius:6px}
+.who input:focus{outline:2px solid var(--primary);background:#fff}
+.who .nm{font-size:17px;font-weight:800}
+.carrow{display:flex;gap:4px;margin-top:2px}
+.carrow input{font-size:12.5px;color:var(--muted);font-weight:600}
+.carrow .car{flex:1.6} .carrow .cor{flex:1}
+.subtot{flex-shrink:0;text-align:right;font-family:var(--mono);font-size:13px;font-weight:700}
+.subtot .p{color:var(--green)} .subtot .q{color:var(--red);display:block;font-size:11px}
+
+/* ===== Entradas ===== */
+.entries{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.entry{display:flex;align-items:center;gap:6px}
+.entry .val{width:106px;flex-shrink:0;font-family:var(--mono);font-weight:700;font-size:15px;
+  border:1px solid var(--line);border-radius:9px;padding:9px 8px;text-align:right;background:#FAFBFC}
+.entry .desc{flex:1;min-width:0;border:1px solid var(--line);border-radius:9px;
+  padding:9px 8px;font-size:14px;background:#FAFBFC;color:var(--ink)}
+.entry input:focus{outline:2px solid var(--primary);border-color:transparent;background:#fff}
+.entry .neg{color:var(--red)}
+.st{flex-shrink:0;width:44px;height:40px;border-radius:9px;border:1px solid var(--line);
+  font-size:18px;background:#fff;cursor:pointer}
+.st.paid{background:var(--green-bg);border-color:var(--green)}
+.st.pend{background:var(--red-bg);border-color:var(--red)}
+.del{flex-shrink:0;width:30px;height:40px;border:none;background:none;color:#B7C0C9;
+  font-size:20px;font-weight:700;cursor:pointer}
+.note{display:flex;align-items:center;gap:6px}
+.note input{flex:1;border:1px dashed #CBD4DC;border-radius:9px;padding:9px 8px;
+  font-size:13.5px;font-style:italic;color:#7a6a2f;background:#FFFBEA}
+.note input:focus{outline:2px solid #d9a90f;border-color:transparent}
+.card-actions{display:flex;gap:8px;margin-top:10px}
+.mini{border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;background:#EFF3F6;color:#3c4854}
+.mini.danger{background:none;color:#c07680;margin-left:auto;font-weight:600}
+
+.addDriver{margin:4px 14px 0;width:calc(100% - 28px);padding:14px;border:2px dashed #C4CDD5;
+  border-radius:var(--radius);background:none;font-size:15px;font-weight:700;color:var(--muted);cursor:pointer}
+
+/* ===== Barra inferior ===== */
+.bottombar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;gap:10px;
+  padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+  background:rgba(238,241,244,.95);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  border-top:1px solid var(--line)}
+.btn{flex:1;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer}
+.btn.primary{background:var(--primary);color:#fff}
+.btn.danger{background:var(--red);color:#fff}
+.btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink);flex:0 0 auto;padding:14px 16px}
+
+/* ===== Overlays ===== */
+.overlay{position:fixed;inset:0;z-index:100;background:rgba(22,32,42,.45);display:none;
+  align-items:flex-end;justify-content:center}
+.overlay.open{display:flex}
+.sheet{background:var(--card);width:100%;max-width:560px;border-radius:18px 18px 0 0;
+  padding:16px 16px calc(20px + env(safe-area-inset-bottom));max-height:88vh;
+  display:flex;flex-direction:column;position:relative}
+.sheet h3{font-size:17px;font-weight:800;margin-bottom:12px;padding-right:36px}
+.sheet .close{position:absolute;right:14px;top:12px;border:none;background:#EFF3F6;
+  width:32px;height:32px;border-radius:50%;font-size:16px;font-weight:700;color:var(--muted);cursor:pointer}
+.menu button{display:block;width:100%;text-align:left;border:none;background:none;
+  padding:15px 6px;font-size:16px;font-weight:600;color:var(--ink);cursor:pointer;
+  border-bottom:1px solid var(--line)}
+.menu button:last-child{border-bottom:none}
+pre.preview{flex:1;overflow:auto;background:#F5F7F9;border:1px solid var(--line);
+  border-radius:10px;padding:12px;font-family:var(--mono);font-size:12.5px;
+  white-space:pre-wrap;word-break:break-word;margin-bottom:12px}
+.sheet .row{display:flex;gap:10px}
+.askMsg{font-size:15px;color:#3c4854;line-height:1.45;margin-bottom:16px;white-space:pre-line}
+.histItem{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+.histItem .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.histItem .lbl{font-weight:800}
+.histItem .tt{font-family:var(--mono);font-weight:700;color:var(--primary)}
+.histItem .sub{font-size:12px;color:var(--muted);margin-top:2px}
+.histItem .acts{display:flex;gap:8px;margin-top:10px}
+.histItem pre{display:none;margin-top:10px;background:#F5F7F9;border-radius:8px;
+  padding:10px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;max-height:300px;overflow:auto}
+.histItem.open pre{display:block}
+.histList{overflow:auto}
+.empty{color:var(--muted);text-align:center;padding:30px 10px;font-size:14px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:120px;z-index:200;
+  background:#16202A;color:#fff;padding:11px 18px;border-radius:99px;font-size:14px;
+  font-weight:700;opacity:0;pointer-events:none;transition:opacity .25s;max-width:88%;text-align:center}
+.toast.show{opacity:1}
+input,button,textarea{font-family:inherit}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hrow">
+    <div class="htitle">SEMANAL – <input id="weekLabel" placeholder="dd/mm" maxlength="12"></div>
+    <span class="saved" id="savedTag">Salvo ✓</span>
+  </div>
+  <div class="totais">
+    <div class="tot g" id="cardPaid" onclick="setFilter('paid')"><div class="lb">Recebido</div><div class="vl" id="totPaid">R$0,00</div></div>
+    <div class="tot r" id="cardPend" onclick="setFilter('pend')"><div class="lb">Pendente</div><div class="vl" id="totPend">R$0,00</div></div>
+    <div class="tot" id="cardAll" onclick="setFilter('all')"><div class="lb">Total</div><div class="vl" id="totAll">R$0,00</div></div>
+  </div>
+  <div class="filterbar" id="filterBar">
+    <span id="filterMsg"></span>
+    <button onclick="setFilter('all')">✕ Mostrar todos</button>
+  </div>
+</header>
+
+<main id="list"></main>
+<button class="addDriver" onclick="addDriver()">+ Adicionar motorista</button>
+
+<div class="bottombar">
+  <button class="btn primary" onclick="openWhats()">📤 WhatsApp</button>
+  <button class="btn ghost" onclick="openMenu()">☰ Menu</button>
+</div>
+
+<!-- Menu -->
+<div class="overlay" id="ovMenu" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="sheet">
+    <button class="close" onclick="document.getElementById('ovMenu').classList.remove('open')">✕</button>
+    <h3>Menu</h3>
+    <div class="menu">
+      <button onclick="document.getElementById('ovMenu').classList.remove('open');openHistory()">📚 Histórico de semanas</button>
+      <button onclick="document.getElementById('ovMenu').classList.remove('open');closeWeek()">🔒 Fechar semana (salvar no histórico e zerar)</button>
+      <button onclick="document.getElementById('ovMenu').classList.remove('open');exportBackup()">💾 Exportar backup (arquivo)</button>
+      <button onclick="document.getElementById('fileInput').click()">📂 Importar backup</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmação (substitui o confirm nativo, bloqueado no iOS) -->
+<div class="overlay" id="ovAsk">
+  <div class="sheet">
+    <h3 id="askTitle">Confirmar</h3>
+    <div class="askMsg" id="askMsg"></div>
+    <div class="row">
+      <button class="btn ghost" style="flex:1" onclick="askAnswer(false)">Cancelar</button>
+      <button class="btn danger" id="askOk" onclick="askAnswer(true)">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- WhatsApp preview -->
+<div class="overlay" id="ovWhats" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="sheet">
+    <button class="close" onclick="document.getElementById('ovWhats').classList.remove('open')">✕</button>
+    <h3>Resumo para o grupo</h3>
+    <pre class="preview" id="whatsText"></pre>
+    <div class="row">
+      <button class="btn ghost" style="flex:1" onclick="copyWhats()">📋 Copiar</button>
+      <button class="btn primary" onclick="shareWhats()">📤 Compartilhar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Histórico -->
+<div class="overlay" id="ovHist" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="sheet">
+    <button class="close" onclick="document.getElementById('ovHist').classList.remove('open')">✕</button>
+    <h3>Histórico de semanas</h3>
+    <div class="histList" id="histList"></div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept=".json,application/json" style="display:none" onchange="importBackup(this)">
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+var KEY='guimas_semanal_v2';
+var state=null, saveTimer=null, uid=function(){return Math.random().toString(36).slice(2,9)};
+
+/* ---------- Dados iniciais (semana 08/07, placas completas) ---------- */
+function seed(){
+ function D(n,c,cor,p,e,notes){return {id:uid(),name:n,car:c,color:cor,plate:p,
+   entries:(e||[]).map(function(x){return {id:uid(),v:x[0],d:x[1],s:x[2]}}),
+   notes:(notes||[]).map(function(t){return {id:uid(),t:t}})}}
+ var P='paid',Q='pend';
+ return {week:'08/07',history:[],drivers:[
+  D('HUDSON/MICHELLI','','','',[[-60000,'',P]]),
+  D('EDUARDO','LOGAN 2016','PRATA','PWL-8H97',[[70000,'',P],[25000,'seguro quinta',Q]]),
+  D('ELCIMAR','LOGAN 2017','BRANCO','KXJ-8F38',[[35000,'',P],[35000,'',Q],[8500,'manutenção',P]]),
+  D('JORGE','SANDERO 2015','PRATA','PVC-8G42',[[30000,'',P],[18000,'',P],[70000,'semanal quinta',Q],[50000,'4/10 acerto sexta',Q],[50000,'5/10 acerto domingo',Q]]),
+  D('ALESSANDRO','LOGAN 2017','BRANCO','KYI-8I20',[[55000,'',P],[18000,'manutenção',P]]),
+  D('ANDRÉ','VERSA 2014','PRETO','FHP-4B47',[[70000,'',P],[25000,'seguro',P]],['Pagar 1 multa semana que vem 130,50']),
+  D('MARCELO','UNO 2018','PRATA','QMW-8H90',[[118200,'domingo',Q]]),
+  D('MARLON','SANDERO 2017','PRATA','PYO-4A55',[[75000,'',P]]),
+  D('REINALDO','LOGAN 2017','BRANCO','LSY-7B47',[[75000,'',P]]),
+  D('CARLOS','LOGAN 2019','PRETO','QQF-8J26',[[67000,'',P]]),
+  D('ALVES','GRAND SIENA 2019','BRANCO','LMX-7B24',[[50000,'',P],[30000,'',Q],[30000,'acerto domingo',Q]]),
+  D('FABRÍCIO','VOYAGE 2020','BRANCO','QUB-5G52',[[85000,'',P]]),
+  D('GILBERTO','LOGAN 2016','PRATA','PXO-9H80',[[11500,'',P],[10000,'',P],[21500,'quarta',Q],[126000,'domingo',Q]]),
+  D('EUGENIO','COBALT 2019','PRATA','IYZ-7E28',[[249550,'',P]],['R$293,50 multa vai pagar dia 15/07']),
+  D('LUCAS','CRONOS 2019','PRATA','LUO-2B58',[[85000,'',P]]),
+  D('ZÉ ROBERTO','GRAND SIENA 2016','BRANCO','LSK-2B23',[[46000,'',P],[0,'manutenção',Q]]),
+  D('RAPHAEL','MOBI 2019','BRANCO','LUH-7G30',[[80000,'',P]]),
+  D('JORGE','UNO 2018','BRANCO','IXY-2H87',[[47500,'pendente',Q],[80000,'semana sexta',Q]]),
+  D('RÔMULO','ARGO 2023','PRATA','RUK-6I75',[[85000,'',P],[401300,'acerto',Q]]),
+  D('VANDERLEI','LOGAN 2016','BRANCO','GBV-3B96',[[80000,'',P],[13050,'multa',P]]),
+  D('EVERTON','ARGO 2018','BRANCO','QEK-3D83',[[85000,'',P]]),
+  D('RICARDO','ARGO 2023','PRATA','RVX-9H52',[[85000,'',P],[13050,'multa',P]]),
+  D('GIOVANI','KA 2018','PRATA','PZT-0F79',[[60700,'',P]]),
+  D('RODRIGO','GRAND SIENA 2019','BRANCO','LMY-2A63',[[80000,'',P]]),
+  D('HIGOR','FORD KA 2015','PRATA','AZH-5D13',[[70000,'',P]])
+ ]};
+}
+
+/* ---------- Persistência ---------- */
+function load(){
+ try{var raw=localStorage.getItem(KEY); if(raw){state=JSON.parse(raw); return}}catch(e){}
+ state=seed(); persist();
+}
+function persist(){
+ try{localStorage.setItem(KEY,JSON.stringify(state));
+   var t=document.getElementById('savedTag'); t.classList.add('show');
+   setTimeout(function(){t.classList.remove('show')},1200);
+ }catch(e){ toast('⚠️ Falha ao salvar. Exporte um backup!'); }
+}
+function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(persist,300); }
+
+/* ---------- Confirmação própria ---------- */
+var askCb=null;
+function ask(title,msg,okLabel,cb){
+ document.getElementById('askTitle').textContent=title;
+ document.getElementById('askMsg').textContent=msg;
+ document.getElementById('askOk').textContent=okLabel||'Confirmar';
+ askCb=cb;
+ document.getElementById('ovAsk').classList.add('open');
+}
+function askAnswer(yes){
+ document.getElementById('ovAsk').classList.remove('open');
+ var cb=askCb; askCb=null;
+ if(yes&&cb)cb();
+}
+
+/* ---------- Formatação ---------- */
+function fmt(cents){
+ var neg=cents<0, a=Math.abs(cents)/100;
+ var s=a.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+ return (neg?'-':'')+'R$'+s;
+}
+function parseVal(str){
+ if(!str) return 0;
+ str=String(str).trim().replace(/R\$\s?/gi,'');
+ var neg=/^-/.test(str); str=str.replace(/-/g,'');
+ str=str.replace(/\./g,'').replace(',','.');
+ var n=parseFloat(str); if(isNaN(n)) n=0;
+ return Math.round(n*100)*(neg?-1:1);
+}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+/* ---------- Totais ---------- */
+function totals(drivers){
+ var p=0,q=0;
+ drivers.forEach(function(d){d.entries.forEach(function(e){
+   if(e.s==='paid') p+=e.v; else q+=e.v;
+ })});
+ return {paid:p,pend:q,all:p+q};
+}
+function updateTotals(){
+ var t=totals(state.drivers);
+ document.getElementById('totPaid').textContent=fmt(t.paid);
+ document.getElementById('totPend').textContent=fmt(t.pend);
+ document.getElementById('totAll').textContent=fmt(t.all);
+ state.drivers.forEach(function(d){
+   var el=document.getElementById('sub-'+d.id); if(!el) return;
+   var p=0,q=0; d.entries.forEach(function(e){ if(e.s==='paid')p+=e.v; else q+=e.v });
+   el.innerHTML='<span class="p">'+fmt(p)+'</span>'+(q?'<span class="q">'+fmt(q)+' pend.</span>':'');
+ });
+}
+
+/* ---------- Filtro ---------- */
+var filter='all';
+function matchFilter(d){
+ if(filter==='all') return true;
+ return d.entries.some(function(e){return e.s===filter});
+}
+function setFilter(f){
+ filter=(filter===f?'all':f);
+ render();
+}
+function updateFilterUI(shown){
+ document.getElementById('cardPaid').classList.toggle('active',filter==='paid');
+ document.getElementById('cardPend').classList.toggle('active',filter==='pend');
+ var bar=document.getElementById('filterBar');
+ bar.className='filterbar'+(filter!=='all'?' on '+filter:'');
+ if(filter==='pend')
+  document.getElementById('filterMsg').textContent='🔎 Só quem tem pendência ('+shown+')';
+ else if(filter==='paid')
+  document.getElementById('filterMsg').textContent='🔎 Só quem já pagou ('+shown+')';
+}
+
+/* ---------- Render ---------- */
+function render(){
+ document.getElementById('weekLabel').value=state.week;
+ var html='', shown=0;
+ state.drivers.forEach(function(d){
+  if(!matchFilter(d)) return;
+  shown++;
+  html+='<div class="card" id="card-'+d.id+'">'
+   +'<div class="card-head">'
+   +'<div class="plate"><div class="bar"></div><input value="'+esc(d.plate)+'" placeholder="—" oninput="this.value=this.value.toUpperCase();fld(\''+d.id+'\',\'plate\',this.value)"></div>'
+   +'<div class="who"><input class="nm" value="'+esc(d.name)+'" placeholder="Nome" oninput="fld(\''+d.id+'\',\'name\',this.value)">'
+   +'<div class="carrow"><input class="car" value="'+esc(d.car)+'" placeholder="Carro/ano" oninput="fld(\''+d.id+'\',\'car\',this.value)">'
+   +'<input class="cor" value="'+esc(d.color)+'" placeholder="Cor" oninput="fld(\''+d.id+'\',\'color\',this.value)"></div></div>'
+   +'<div class="subtot" id="sub-'+d.id+'"></div></div>'
+   +'<div class="entries">';
+  d.entries.forEach(function(e){
+   html+='<div class="entry">'
+    +'<input class="val'+(e.v<0?' neg':'')+'" inputmode="text" value="'+fmt(e.v)+'" '
+    +'onfocus="this.select()" onblur="valBlur(this,\''+d.id+'\',\''+e.id+'\')">'
+    +'<input class="desc" value="'+esc(e.d)+'" placeholder="descrição (opcional)" oninput="entD(\''+d.id+'\',\''+e.id+'\',this.value)">'
+    +'<button class="st '+e.s+'" onclick="tgl(\''+d.id+'\',\''+e.id+'\')">'+(e.s==='paid'?'✅':'❌')+'</button>'
+    +'<button class="del" onclick="delEnt(\''+d.id+'\',\''+e.id+'\')">×</button></div>';
+  });
+  d.notes.forEach(function(n){
+   html+='<div class="note"><input value="'+esc(n.t)+'" placeholder="observação" oninput="noteT(\''+d.id+'\',\''+n.id+'\',this.value)">'
+    +'<button class="del" onclick="delNote(\''+d.id+'\',\''+n.id+'\')">×</button></div>';
+  });
+  html+='</div><div class="card-actions">'
+   +'<button class="mini" onclick="addEnt(\''+d.id+'\')">+ Valor</button>'
+   +'<button class="mini" onclick="addNote(\''+d.id+'\')">+ Observação</button>'
+   +'<button class="mini danger" onclick="delDriver(\''+d.id+'\')">Remover</button>'
+   +'</div></div>';
+ });
+ if(!html&&filter!=='all')
+  html='<div class="empty">'+(filter==='pend'?'Ninguém com pendência 🎉':'Ninguém pagou ainda')+'</div>';
+ document.getElementById('list').innerHTML=html;
+ updateFilterUI(shown);
+ updateTotals();
+}
+
+/* ---------- Edição ---------- */
+function findD(id){for(var i=0;i<state.drivers.length;i++)if(state.drivers[i].id===id)return state.drivers[i]}
+function findE(d,id){for(var i=0;i<d.entries.length;i++)if(d.entries[i].id===id)return d.entries[i]}
+function fld(did,f,v){findD(did)[f]=v;save()}
+function entD(did,eid,v){findE(findD(did),eid).d=v;save()}
+function noteT(did,nid,v){var d=findD(did);d.notes.forEach(function(n){if(n.id===nid)n.t=v});save()}
+function valBlur(inp,did,eid){
+ var e=findE(findD(did),eid); e.v=parseVal(inp.value);
+ inp.value=fmt(e.v); inp.classList.toggle('neg',e.v<0);
+ updateTotals(); save();
+}
+function tgl(did,eid){
+ var e=findE(findD(did),eid); e.s=(e.s==='paid'?'pend':'paid');
+ save(); render();
+}
+function addEnt(did){findD(did).entries.push({id:uid(),v:0,d:'',s:'pend'});save();render()}
+function delEnt(did,eid){
+ var d=findD(did), e=findE(d,eid);
+ ask('Excluir lançamento','Excluir o lançamento de '+fmt(e.v)+(e.d?' ('+e.d+')':'')+' de '+(d.name||'este motorista')+'?','Excluir',function(){
+  d.entries=d.entries.filter(function(x){return x.id!==eid});
+  save();render();toast('Lançamento excluído');
+ });
+}
+function addNote(did){findD(did).notes.push({id:uid(),t:''});save();render()}
+function delNote(did,nid){
+ var d=findD(did);
+ d.notes=d.notes.filter(function(n){return n.id!==nid});
+ save();render();toast('Observação excluída');
+}
+function addDriver(){
+ state.drivers.push({id:uid(),name:'',car:'',color:'',plate:'',entries:[{id:uid(),v:0,d:'',s:'pend'}],notes:[]});
+ save();render();window.scrollTo(0,document.body.scrollHeight);
+}
+function delDriver(did){
+ var d=findD(did);
+ ask('Remover motorista','Remover '+(d.name||'este motorista')+(d.plate?' ('+d.plate+')':'')+' e todos os lançamentos dele desta semana?','Remover',function(){
+  state.drivers=state.drivers.filter(function(x){return x.id!==did});
+  save();render();toast('Motorista removido');
+ });
+}
+
+/* ---------- Texto WhatsApp ---------- */
+function buildText(drivers,week){
+ var blocks=[];
+ drivers.forEach(function(d){
+  var head=[d.name,d.car,d.color,d.plate].filter(function(x){return x&&x.trim()}).join(' | ');
+  if(!head)return;
+  var lines=['*'+head+'*'];
+  d.entries.forEach(function(e){
+   lines.push(fmt(e.v)+(e.d&&e.d.trim()?' '+e.d.trim():'')+' '+(e.s==='paid'?'✅':'❌'));
+  });
+  d.notes.forEach(function(n){ if(n.t&&n.t.trim()) lines.push(n.t.trim()); });
+  blocks.push(lines.join('\n'));
+ });
+ var t=totals(drivers);
+ return '*SEMANAL - '+week+'*\n\n\n'+blocks.join('\n\n\n')
+  +'\n\n\n*TOTAL SEMANAL - '+fmt(t.all)+'*';
+}
+function openWhats(){
+ document.getElementById('whatsText').textContent=buildText(state.drivers,state.week);
+ document.getElementById('ovWhats').classList.add('open');
+}
+function copyWhats(){
+ var txt=document.getElementById('whatsText').textContent;
+ doCopy(txt,function(){toast('Copiado! Cole no grupo do WhatsApp')});
+}
+function shareWhats(){
+ var txt=document.getElementById('whatsText').textContent;
+ if(navigator.share){navigator.share({text:txt}).catch(function(){})}
+ else copyWhats();
+}
+function doCopy(txt,ok){
+ if(navigator.clipboard&&navigator.clipboard.writeText){
+  navigator.clipboard.writeText(txt).then(ok,function(){legacyCopy(txt);ok()});
+ }else{legacyCopy(txt);ok()}
+}
+function legacyCopy(txt){
+ var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+ document.body.appendChild(ta);ta.focus();ta.select();
+ try{document.execCommand('copy')}catch(e){}
+ document.body.removeChild(ta);
+}
+
+/* ---------- Fechar semana ---------- */
+function closeWeek(){
+ var t=totals(state.drivers);
+ ask('Fechar semana '+state.week,
+  'Total: '+fmt(t.all)+'\nRecebido: '+fmt(t.paid)+' · Pendente: '+fmt(t.pend)
+  +'\n\nA semana será salva no histórico e todos os lançamentos serão apagados (os motoristas continuam na lista).',
+  'Fechar semana',
+  function(){
+   var now=new Date();
+   var stamp=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear();
+   state.history.unshift({
+    id:uid(), week:state.week, closedAt:stamp,
+    paid:t.paid, pend:t.pend, all:t.all,
+    text:buildText(state.drivers,state.week),
+    drivers:JSON.parse(JSON.stringify(state.drivers))
+   });
+   state.drivers.forEach(function(d){d.entries=[];d.notes=[]});
+   state.week=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2);
+   filter='all';
+   persist(); render();
+   toast('Semana fechada e salva no histórico ✓');
+ });
+}
+
+/* ---------- Histórico ---------- */
+function openHistory(){
+ var el=document.getElementById('histList'), h=state.history;
+ if(!h.length){el.innerHTML='<div class="empty">Nenhuma semana fechada ainda.<br>Use "Fechar semana" no menu ao fim de cada semana.</div>'}
+ else{
+  el.innerHTML=h.map(function(w){
+   return '<div class="histItem" id="h-'+w.id+'">'
+    +'<div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div>'
+    +'<div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+' · Pendente '+fmt(w.pend)+'</div></div>'
+    +'<div class="tt">'+fmt(w.all)+'</div></div>'
+    +'<div class="acts">'
+    +'<button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button>'
+    +'<button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button>'
+    +'<button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div>'
+    +'<pre>'+esc(w.text)+'</pre></div>';
+  }).join('');
+ }
+ document.getElementById('ovHist').classList.add('open');
+}
+function copyHist(id){
+ var w=state.history.filter(function(x){return x.id===id})[0]; if(!w)return;
+ doCopy(w.text,function(){toast('Semana '+w.week+' copiada')});
+}
+function delHist(id){
+ var w=state.history.filter(function(x){return x.id===id})[0]; if(!w)return;
+ ask('Excluir do histórico','Excluir a semana '+w.week+' ('+fmt(w.all)+') do histórico? Isso não pode ser desfeito.','Excluir',function(){
+  state.history=state.history.filter(function(x){return x.id!==id});
+  persist(); openHistory(); toast('Semana excluída do histórico');
+ });
+}
+
+/* ---------- Backup ---------- */
+function exportBackup(){
+ var now=new Date();
+ var name='backup-semanal-'+now.getFullYear()+('0'+(now.getMonth()+1)).slice(-2)+('0'+now.getDate()).slice(-2)+'.json';
+ var json=JSON.stringify(state,null,1);
+ var blob=new Blob([json],{type:'application/json'});
+ var file; try{file=new File([blob],name,{type:'application/json'})}catch(e){}
+ if(file&&navigator.canShare&&navigator.canShare({files:[file]})){
+  navigator.share({files:[file]}).catch(function(){downloadBlob(blob,name)});
+ }else downloadBlob(blob,name);
+}
+function downloadBlob(blob,name){
+ var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+ document.body.appendChild(a);a.click();
+ setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);
+}
+function importBackup(inp){
+ var f=inp.files&&inp.files[0]; inp.value=''; if(!f)return;
+ var r=new FileReader();
+ r.onload=function(){
+  try{
+   var data=JSON.parse(r.result);
+   if(!data||!Array.isArray(data.drivers)) throw new Error('formato');
+   ask('Importar backup',
+    'Os dados atuais serão substituídos pelos do arquivo ('+data.drivers.length+' motoristas, '+((data.history||[]).length)+' semanas no histórico).',
+    'Importar',
+    function(){
+     state={week:data.week||'',drivers:data.drivers,history:data.history||[]};
+     filter='all';
+     persist(); render();
+     document.getElementById('ovMenu').classList.remove('open');
+     toast('Backup importado ✓');
+   });
+  }catch(e){ toast('⚠️ Arquivo inválido'); }
+ };
+ r.readAsText(f);
+}
+
+/* ---------- Diversos ---------- */
+function openMenu(){document.getElementById('ovMenu').classList.add('open')}
+function toast(msg){
+ var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
+ setTimeout(function(){t.classList.remove('show')},2200);
+}
+document.getElementById('weekLabel').addEventListener('input',function(){state.week=this.value;save()});
+
+/* Modo offline permanente (ativa quando hospedado, ex.: GitHub Pages) */
+if('serviceWorker' in navigator){
+ try{navigator.serviceWorker.register('./sw.js').catch(function(){})}catch(e){}
+}
+
+load(); render();
+</script>
+</body>
+</html>
