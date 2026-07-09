@@ -30,6 +30,15 @@ header{position:sticky;top:0;z-index:50;background:rgba(238,241,244,.92);
   width:86px;padding:2px 4px;border-radius:6px}
 .htitle input:focus{outline:2px solid var(--primary);background:#fff}
 .saved{font-size:12px;color:var(--muted);opacity:0;transition:opacity .3s}
+.syncpill{font-size:11px;font-weight:800;padding:5px 10px;border-radius:99px;cursor:pointer;
+  background:#E8ECF0;color:var(--muted);white-space:nowrap}
+.syncpill.on{background:var(--green-bg);color:var(--green)}
+.syncpill.wait{background:#FFF3D6;color:#9a7b0a}
+.syncfield{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;
+  font-size:13px;margin-bottom:10px;background:#FAFBFC;font-family:var(--mono)}
+textarea.syncfield{min-height:110px;resize:vertical}
+.synclbl{font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.05em;margin-bottom:4px}
 .saved.show{opacity:1;color:var(--green)}
 .totais{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
 .tot{background:var(--card);border:1px solid var(--line);border-radius:10px;
@@ -147,7 +156,7 @@ input,button,textarea{font-family:inherit}
 <header>
   <div class="hrow">
     <div class="htitle">SEMANAL – <input id="weekLabel" placeholder="dd/mm" maxlength="12"></div>
-    <span class="saved" id="savedTag">Salvo ✓</span>
+    <span style="display:flex;align-items:center;gap:8px"><span class="saved" id="savedTag">Salvo ✓</span><span class="syncpill" id="syncPill" onclick="openSync()">⚪ sem sync</span></span>
   </div>
   <div class="totais">
     <div class="tot g" id="cardPaid" onclick="setFilter('paid')"><div class="lb">Recebido</div><div class="vl" id="totPaid">R$0,00</div></div>
@@ -178,6 +187,7 @@ input,button,textarea{font-family:inherit}
       <button onclick="document.getElementById('ovMenu').classList.remove('open');closeWeek()">🔒 Fechar semana (salvar no histórico e zerar)</button>
       <button onclick="document.getElementById('ovMenu').classList.remove('open');exportBackup()">💾 Exportar backup (arquivo)</button>
       <button onclick="document.getElementById('fileInput').click()">📂 Importar backup</button>
+      <button onclick="document.getElementById('ovMenu').classList.remove('open');openSync()">🔄 Sincronização entre aparelhos</button>
     </div>
   </div>
 </div>
@@ -216,6 +226,23 @@ input,button,textarea{font-family:inherit}
   </div>
 </div>
 
+<!-- Sincronização -->
+<div class="overlay" id="ovSync" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="sheet">
+    <button class="close" onclick="document.getElementById('ovSync').classList.remove('open')">✕</button>
+    <h3>Sincronização entre aparelhos</h3>
+    <div class="askMsg" id="syncStatusMsg"></div>
+    <div class="synclbl">Configuração do Firebase (cole aqui)</div>
+    <textarea class="syncfield" id="syncCfgInput" placeholder='{ "apiKey": "...", "databaseURL": "...", ... }'></textarea>
+    <div class="synclbl">Chave da família (a mesma nos dois iPhones)</div>
+    <input class="syncfield" id="syncKeyInput" placeholder="ex.: guimas-familia-2026-xxxx" autocapitalize="none">
+    <div class="row">
+      <button class="btn ghost" style="flex:1" onclick="disableSync()">Desativar</button>
+      <button class="btn primary" onclick="saveSyncSetup()">Salvar e conectar</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="fileInput" accept=".json,application/json" style="display:none" onchange="importBackup(this)">
 <div class="toast" id="toast"></div>
 
@@ -226,37 +253,7 @@ var state=null, saveTimer=null, uid=function(){return Math.random().toString(36)
 
 /* ---------- Dados iniciais (semana 08/07, placas completas) ---------- */
 function seed(){
- function D(n,c,cor,p,e,notes){return {id:uid(),name:n,car:c,color:cor,plate:p,
-   entries:(e||[]).map(function(x){return {id:uid(),v:x[0],d:x[1],s:x[2]}}),
-   notes:(notes||[]).map(function(t){return {id:uid(),t:t}})}}
- var P='paid',Q='pend';
- return {week:'08/07',history:[],drivers:[
-  D('HUDSON/MICHELLI','','','',[[-60000,'',P]]),
-  D('EDUARDO','LOGAN 2016','PRATA','PWL-8H97',[[70000,'',P],[25000,'seguro quinta',Q]]),
-  D('ELCIMAR','LOGAN 2017','BRANCO','KXJ-8F38',[[35000,'',P],[35000,'',Q],[8500,'manutenção',P]]),
-  D('JORGE','SANDERO 2015','PRATA','PVC-8G42',[[30000,'',P],[18000,'',P],[70000,'semanal quinta',Q],[50000,'4/10 acerto sexta',Q],[50000,'5/10 acerto domingo',Q]]),
-  D('ALESSANDRO','LOGAN 2017','BRANCO','KYI-8I20',[[55000,'',P],[18000,'manutenção',P]]),
-  D('ANDRÉ','VERSA 2014','PRETO','FHP-4B47',[[70000,'',P],[25000,'seguro',P]],['Pagar 1 multa semana que vem 130,50']),
-  D('MARCELO','UNO 2018','PRATA','QMW-8H90',[[118200,'domingo',Q]]),
-  D('MARLON','SANDERO 2017','PRATA','PYO-4A55',[[75000,'',P]]),
-  D('REINALDO','LOGAN 2017','BRANCO','LSY-7B47',[[75000,'',P]]),
-  D('CARLOS','LOGAN 2019','PRETO','QQF-8J26',[[67000,'',P]]),
-  D('ALVES','GRAND SIENA 2019','BRANCO','LMX-7B24',[[50000,'',P],[30000,'',Q],[30000,'acerto domingo',Q]]),
-  D('FABRÍCIO','VOYAGE 2020','BRANCO','QUB-5G52',[[85000,'',P]]),
-  D('GILBERTO','LOGAN 2016','PRATA','PXO-9H80',[[11500,'',P],[10000,'',P],[21500,'quarta',Q],[126000,'domingo',Q]]),
-  D('EUGENIO','COBALT 2019','PRATA','IYZ-7E28',[[249550,'',P]],['R$293,50 multa vai pagar dia 15/07']),
-  D('LUCAS','CRONOS 2019','PRATA','LUO-2B58',[[85000,'',P]]),
-  D('ZÉ ROBERTO','GRAND SIENA 2016','BRANCO','LSK-2B23',[[46000,'',P],[0,'manutenção',Q]]),
-  D('RAPHAEL','MOBI 2019','BRANCO','LUH-7G30',[[80000,'',P]]),
-  D('JORGE','UNO 2018','BRANCO','IXY-2H87',[[47500,'pendente',Q],[80000,'semana sexta',Q]]),
-  D('RÔMULO','ARGO 2023','PRATA','RUK-6I75',[[85000,'',P],[401300,'acerto',Q]]),
-  D('VANDERLEI','LOGAN 2016','BRANCO','GBV-3B96',[[80000,'',P],[13050,'multa',P]]),
-  D('EVERTON','ARGO 2018','BRANCO','QEK-3D83',[[85000,'',P]]),
-  D('RICARDO','ARGO 2023','PRATA','RVX-9H52',[[85000,'',P],[13050,'multa',P]]),
-  D('GIOVANI','KA 2018','PRATA','PZT-0F79',[[60700,'',P]]),
-  D('RODRIGO','GRAND SIENA 2019','BRANCO','LMY-2A63',[[80000,'',P]]),
-  D('HIGOR','FORD KA 2015','PRATA','AZH-5D13',[[70000,'',P]])
- ]};
+ return {week:'',history:[],drivers:[]};
 }
 
 /* ---------- Persistência ---------- */
@@ -270,7 +267,7 @@ function persist(){
    setTimeout(function(){t.classList.remove('show')},1200);
  }catch(e){ toast('⚠️ Falha ao salvar. Exporte um backup!'); }
 }
-function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(persist,300); }
+function save(){ touch(); clearTimeout(saveTimer); saveTimer=setTimeout(function(){persist();schedulePush();},300); }
 
 /* ---------- Confirmação própria ---------- */
 var askCb=null;
@@ -379,6 +376,8 @@ function render(){
  });
  if(!html&&filter!=='all')
   html='<div class="empty">'+(filter==='pend'?'Ninguém com pendência 🎉':'Ninguém pagou ainda')+'</div>';
+ if(!html&&filter==='all'&&!state.drivers.length)
+  html='<div class="empty">Bem-vindo! Para carregar os motoristas:<br><b>☰ Menu → 📂 Importar backup</b><br>e escolha o arquivo dados-guimas.json<br><br>Ou toque em "+ Adicionar motorista" para começar do zero.</div>';
  document.getElementById('list').innerHTML=html;
  updateFilterUI(shown);
  updateTotals();
@@ -486,7 +485,7 @@ function closeWeek(){
    state.drivers.forEach(function(d){d.entries=[];d.notes=[]});
    state.week=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2);
    filter='all';
-   persist(); render();
+   touch(); persist(); schedulePush(); render();
    toast('Semana fechada e salva no histórico ✓');
  });
 }
@@ -518,7 +517,7 @@ function delHist(id){
  var w=state.history.filter(function(x){return x.id===id})[0]; if(!w)return;
  ask('Excluir do histórico','Excluir a semana '+w.week+' ('+fmt(w.all)+') do histórico? Isso não pode ser desfeito.','Excluir',function(){
   state.history=state.history.filter(function(x){return x.id!==id});
-  persist(); openHistory(); toast('Semana excluída do histórico');
+  touch(); persist(); schedulePush(); openHistory(); toast('Semana excluída do histórico');
  });
 }
 
@@ -551,7 +550,7 @@ function importBackup(inp){
     function(){
      state={week:data.week||'',drivers:data.drivers,history:data.history||[]};
      filter='all';
-     persist(); render();
+     touch(); persist(); schedulePush(); render();
      document.getElementById('ovMenu').classList.remove('open');
      toast('Backup importado ✓');
    });
@@ -568,12 +567,133 @@ function toast(msg){
 }
 document.getElementById('weekLabel').addEventListener('input',function(){state.week=this.value;save()});
 
+/* ================= SINCRONIZAÇÃO (Firebase Realtime Database) ================= */
+var DEV=(function(){try{var d=localStorage.getItem('guimas_dev');if(!d){d=uid()+uid();localStorage.setItem('guimas_dev',d)}return d}catch(e){return uid()}})();
+var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false};
+
+function touch(){state.rev=Date.now();state.dev=DEV;}
+function syncCfg(){try{return JSON.parse(localStorage.getItem('guimas_sync')||'null')}catch(e){return null}}
+
+function setPill(mode,txt){
+ var p=document.getElementById('syncPill');
+ p.className='syncpill'+(mode?' '+mode:'');
+ p.textContent=txt;
+}
+function loadScript(src){return new Promise(function(res,rej){
+ var s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;
+ document.head.appendChild(s);
+})}
+function famHash(key){
+ return crypto.subtle.digest('SHA-256',new TextEncoder().encode('guimas:'+key))
+  .then(function(buf){return Array.prototype.map.call(new Uint8Array(buf),function(b){return ('0'+b.toString(16)).slice(-2)}).join('')});
+}
+function startSync(){
+ var cfg=syncCfg();
+ if(!cfg||!cfg.config||!cfg.key){setPill('','⚪ sem sync');return}
+ setPill('wait','🟡 conectando…');
+ var V='10.14.1', B='https://www.gstatic.com/firebasejs/'+V+'/';
+ var chain=Promise.resolve();
+ if(typeof firebase==='undefined'){
+  chain=loadScript(B+'firebase-app-compat.js')
+   .then(function(){return loadScript(B+'firebase-auth-compat.js')})
+   .then(function(){return loadScript(B+'firebase-database-compat.js')});
+ }
+ chain.then(function(){
+  if(!SYNC.started){firebase.initializeApp(cfg.config);SYNC.started=true;}
+  return firebase.auth().signInAnonymously();
+ }).then(function(){
+  return famHash(cfg.key);
+ }).then(function(h){
+  SYNC.ref=firebase.database().ref('familias/'+h+'/estado');
+  SYNC.ref.on('value',function(snap){var v=snap.val();
+   if(!v){push();return}
+   onRemote(v);
+  });
+  firebase.database().ref('.info/connected').on('value',function(s){
+   SYNC.online=!!s.val();
+   setPill(SYNC.online?'on':'wait',SYNC.online?'🟢 sincronizado':'🟡 offline — na fila');
+   if(SYNC.online&&SYNC.pendingPush)push();
+  });
+ }).catch(function(err){
+  setPill('wait','🟡 offline — na fila');
+  SYNC.pendingPush=true;
+  setTimeout(startSync,20000);
+ });
+}
+function push(){
+ if(!SYNC.ref){SYNC.pendingPush=true;return}
+ SYNC.pendingPush=false;
+ SYNC.ref.set(state).catch(function(){SYNC.pendingPush=true;});
+}
+function schedulePush(){
+ clearTimeout(SYNC.pushTimer);
+ SYNC.pushTimer=setTimeout(push,1200);
+}
+function inputFocused(){
+ var a=document.activeElement;
+ return !!(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'));
+}
+function onRemote(v){
+ if(!v.rev||v.dev===DEV){ if((v.rev||0)<(state.rev||0)) schedulePush(); return }
+ if(v.rev<=(state.rev||0)){ if(v.rev<(state.rev||0)) schedulePush(); return }
+ if(inputFocused()){SYNC.pendingRemote=v;return}
+ adopt(v);
+}
+function adopt(v){
+ state=v; SYNC.pendingRemote=null;
+ try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}
+ filter='all'; render();
+ toast('🔄 Atualizado pelo outro aparelho');
+}
+setInterval(function(){ if(SYNC.pendingRemote&&!inputFocused()) adopt(SYNC.pendingRemote); },1500);
+
+function openSync(){
+ var cfg=syncCfg();
+ document.getElementById('syncStatusMsg').textContent=
+  cfg&&cfg.config
+   ?(SYNC.online?'Conectado. Alterações aparecem nos dois aparelhos em segundos.':'Configurado. Aguardando conexão — as alterações estão na fila e sobem sozinhas.')
+   :'Sem sincronização: os dados ficam só neste aparelho. Cole a configuração do Firebase e crie uma chave da família (a mesma nos dois iPhones).';
+ if(cfg){document.getElementById('syncCfgInput').value=JSON.stringify(cfg.config,null,1);document.getElementById('syncKeyInput').value=cfg.key||''}
+ document.getElementById('ovSync').classList.add('open');
+}
+function parseCfgText(t){
+ t=String(t||'').trim();
+ var a=t.indexOf('{'), b=t.lastIndexOf('}');
+ if(a<0||b<0) throw new Error('cfg');
+ t=t.slice(a,b+1);
+ try{return JSON.parse(t)}catch(e){}
+ var obj=(new Function('return ('+t+')'))();
+ return obj;
+}
+function saveSyncSetup(){
+ try{
+  var cfg=parseCfgText(document.getElementById('syncCfgInput').value);
+  var key=document.getElementById('syncKeyInput').value.trim();
+  if(!cfg.apiKey||!cfg.databaseURL){toast('⚠️ Configuração incompleta: precisa ter apiKey e databaseURL');return}
+  if(key.length<8){toast('⚠️ Chave da família muito curta (mín. 8 caracteres)');return}
+  localStorage.setItem('guimas_sync',JSON.stringify({config:cfg,key:key}));
+  document.getElementById('ovSync').classList.remove('open');
+  toast('Sincronização configurada ✓');
+  startSync();
+ }catch(e){toast('⚠️ Configuração inválida — cole o bloco inteiro com { }')}
+}
+function disableSync(){
+ ask('Desativar sincronização','Este aparelho para de enviar e receber atualizações. Os dados locais continuam intactos.','Desativar',function(){
+  localStorage.removeItem('guimas_sync');
+  if(SYNC.ref){try{SYNC.ref.off()}catch(e){}}
+  SYNC.ref=null;SYNC.online=false;
+  setPill('','⚪ sem sync');
+  document.getElementById('ovSync').classList.remove('open');
+ });
+}
+
 /* Modo offline permanente (ativa quando hospedado, ex.: GitHub Pages) */
 if('serviceWorker' in navigator){
  try{navigator.serviceWorker.register('./sw.js').catch(function(){})}catch(e){}
 }
 
 load(); render();
+try{startSync()}catch(e){}
 </script>
 </body>
 </html>
