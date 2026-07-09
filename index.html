@@ -94,6 +94,9 @@ main{padding:14px 14px 0;display:flex;flex-direction:column;gap:12px}
   font-size:18px;background:#fff;cursor:pointer}
 .st.paid{background:var(--green-bg);border-color:var(--green)}
 .st.pend{background:var(--red-bg);border-color:var(--red)}
+.st.part{width:40px;background:#FFF7E0;border-color:#E4C465;font-size:16px}
+.pprev{font-size:15px;line-height:1.6;margin:4px 0 14px;font-weight:700}
+.pprev .ok{color:var(--green)} .pprev .falta{color:var(--red)}
 .del{flex-shrink:0;width:30px;height:40px;border:none;background:none;color:#B7C0C9;
   font-size:20px;font-weight:700;cursor:pointer}
 .note{display:flex;align-items:center;gap:6px}
@@ -246,6 +249,22 @@ input,button,textarea{font-family:inherit}
   </div>
 </div>
 
+<!-- Pagamento parcial -->
+<div class="overlay" id="ovPartial" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="sheet">
+    <button class="close" onclick="document.getElementById('ovPartial').classList.remove('open')">✕</button>
+    <h3>Pagamento parcial</h3>
+    <div class="askMsg" id="pInfo"></div>
+    <div class="synclbl">Quanto foi pago agora?</div>
+    <input class="syncfield" id="pVal" inputmode="text" placeholder="ex.: 500" oninput="pPreview()">
+    <div class="pprev" id="pPrev">&nbsp;</div>
+    <div class="row">
+      <button class="btn ghost" style="flex:1" onclick="document.getElementById('ovPartial').classList.remove('open')">Cancelar</button>
+      <button class="btn primary" onclick="confirmPartial()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="fileInput" accept=".json,application/json" style="display:none" onchange="importBackup(this)">
 <div class="toast" id="toast"></div>
 
@@ -364,6 +383,7 @@ function render(){
     +'<input class="val'+(e.v<0?' neg':'')+'" inputmode="text" value="'+fmt(e.v)+'" '
     +'onfocus="this.select()" onblur="valBlur(this,\''+d.id+'\',\''+e.id+'\')">'
     +'<input class="desc" value="'+esc(e.d)+'" placeholder="descrição (opcional)" oninput="entD(\''+d.id+'\',\''+e.id+'\',this.value)">'
+    +(e.s==='pend'&&e.v>0?'<button class="st part" onclick="openPartial(\''+d.id+'\',\''+e.id+'\')" title="Pagamento parcial">💰</button>':'')
     +'<button class="st '+e.s+'" onclick="tgl(\''+d.id+'\',\''+e.id+'\')">'+(e.s==='paid'?'✅':'❌')+'</button>'
     +'<button class="del" onclick="delEnt(\''+d.id+'\',\''+e.id+'\')">×</button></div>';
   });
@@ -425,6 +445,42 @@ function delDriver(did){
   state.drivers=state.drivers.filter(function(x){return x.id!==did});
   save();render();toast('Motorista removido');
  });
+}
+
+/* ---------- Pagamento parcial ---------- */
+var PART={did:null,eid:null};
+function openPartial(did,eid){
+ var e=findE(findD(did),eid); if(!e)return;
+ PART.did=did; PART.eid=eid;
+ document.getElementById('pInfo').textContent='Lançamento pendente: '+fmt(e.v)+(e.d?' ('+e.d+')':'')+' — '+(findD(did).name||'motorista');
+ document.getElementById('pVal').value='';
+ document.getElementById('pPrev').innerHTML='&nbsp;';
+ document.getElementById('ovPartial').classList.add('open');
+}
+function pPreview(){
+ var e=findE(findD(PART.did),PART.eid); if(!e)return;
+ var pago=parseVal(document.getElementById('pVal').value);
+ var el=document.getElementById('pPrev');
+ if(pago<=0){el.innerHTML='&nbsp;';return}
+ if(pago>=e.v){el.innerHTML='Valor cobre tudo — o lançamento inteiro vira <span class="ok">✅ '+fmt(e.v)+'</span>';return}
+ el.innerHTML='<span class="ok">✅ Pago agora: '+fmt(pago)+'</span> &nbsp;·&nbsp; <span class="falta">❌ Falta: '+fmt(e.v-pago)+'</span>';
+}
+function confirmPartial(){
+ var d=findD(PART.did), e=findE(d,PART.eid); if(!e)return;
+ var pago=parseVal(document.getElementById('pVal').value);
+ if(pago<=0){toast('⚠️ Digite o valor pago');return}
+ if(pago>=e.v){
+  e.s='paid';
+  document.getElementById('ovPartial').classList.remove('open');
+  save(); render(); toast('Lançamento quitado por inteiro ✅'); return;
+ }
+ var idx=d.entries.indexOf(e);
+ var restante=e.v-pago;
+ e.v=restante; // o ❌ continua no lugar, com o que falta
+ d.entries.splice(idx+1,0,{id:uid(),v:pago,d:(e.d?e.d+' — ':'')+'parcial',s:'paid'});
+ document.getElementById('ovPartial').classList.remove('open');
+ save(); render();
+ toast('✅ '+fmt(pago)+' pago · ❌ falta '+fmt(restante));
 }
 
 /* ---------- Texto WhatsApp ---------- */
