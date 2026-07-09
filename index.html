@@ -261,7 +261,7 @@ function seed(){
 
 /* ---------- Persistência ---------- */
 function load(){
- try{var raw=localStorage.getItem(KEY); if(raw){state=JSON.parse(raw); return}}catch(e){}
+ try{var raw=localStorage.getItem(KEY); if(raw){state=norm(JSON.parse(raw)); return}}catch(e){}
  state=seed(); persist();
 }
 function persist(){
@@ -551,7 +551,7 @@ function importBackup(inp){
     'Os dados atuais serão substituídos pelos do arquivo ('+data.drivers.length+' motoristas, '+((data.history||[]).length)+' semanas no histórico).',
     'Importar',
     function(){
-     state={week:data.week||'',drivers:data.drivers,history:data.history||[]};
+     state=norm({week:data.week,drivers:data.drivers,history:data.history});
      filter='all';
      touch(); persist(); schedulePush(); render();
      document.getElementById('ovMenu').classList.remove('open');
@@ -575,6 +575,25 @@ var DEV=(function(){try{var d=localStorage.getItem('guimas_dev');if(!d){d=uid()+
 var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false};
 
 function touch(){state.rev=Date.now();state.dev=DEV;}
+function toArr(x){
+ if(Array.isArray(x)) return x;
+ if(x&&typeof x==='object') return Object.keys(x).sort(function(a,b){return a-b}).map(function(k){return x[k]});
+ return [];
+}
+function norm(s){
+ if(!s||typeof s!=='object') s={};
+ var o={week:(typeof s.week==='string'?s.week:''),rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
+ toArr(s.drivers).forEach(function(d){ if(!d) return;
+  o.drivers.push({id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',
+   entries:toArr(d.entries).filter(Boolean).map(function(e){return {id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend')}}),
+   notes:toArr(d.notes).filter(Boolean).map(function(n){return {id:n.id||uid(),t:n.t||''}})});
+ });
+ toArr(s.history).forEach(function(w){ if(!w) return;
+  o.history.push({id:w.id||uid(),week:w.week||'',closedAt:w.closedAt||'',paid:w.paid||0,pend:w.pend||0,all:w.all||0,
+   text:w.text||'',drivers:toArr(w.drivers)});
+ });
+ return o;
+}
 function syncCfg(){try{return JSON.parse(localStorage.getItem('guimas_sync')||'null')}catch(e){return null}}
 
 function setPill(mode,txt){
@@ -611,6 +630,10 @@ function startSync(){
   SYNC.ref.on('value',function(snap){var v=snap.val();
    if(!v){push();return}
    onRemote(v);
+  },function(err){
+   setPill('wait','🟡 reconectando…');
+   SYNC.pendingPush=true;
+   setTimeout(startSync,15000);
   });
   firebase.database().ref('.info/connected').on('value',function(s){
    SYNC.online=!!s.val();
@@ -643,7 +666,7 @@ function onRemote(v){
  adopt(v);
 }
 function adopt(v){
- state=v; SYNC.pendingRemote=null;
+ state=norm(v); SYNC.pendingRemote=null;
  try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}
  filter='all'; render();
  toast('🔄 Atualizado pelo outro aparelho');
