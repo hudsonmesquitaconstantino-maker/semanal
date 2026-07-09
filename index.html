@@ -473,23 +473,25 @@ function legacyCopy(txt){
 function closeWeek(){
  var t=totals(state.drivers);
  ask('Fechar semana '+state.week,
-  'Total: '+fmt(t.all)+'\nRecebido: '+fmt(t.paid)+' · Pendente: '+fmt(t.pend)
-  +'\n\nA semana será salva no histórico e todos os lançamentos serão apagados (os motoristas continuam na lista).',
+  'Recebido: '+fmt(t.paid)+' → fecha no histórico como o valor da semana.\nPendente: '+fmt(t.pend)+' → os lançamentos ❌ vão automaticamente para a semana nova.\n\nOs motoristas continuam na lista.',
   'Fechar semana',
   function(){
    var now=new Date();
    var stamp=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear();
    state.history.unshift({
     id:uid(), week:state.week, closedAt:stamp,
-    paid:t.paid, pend:t.pend, all:t.all,
+    paid:t.paid, pend:t.pend, all:t.paid, carried:t.pend,
     text:buildText(state.drivers,state.week),
     drivers:JSON.parse(JSON.stringify(state.drivers))
    });
-   state.drivers.forEach(function(d){d.entries=[];d.notes=[]});
+   state.drivers.forEach(function(d){
+    d.entries=d.entries.filter(function(e){return e.s==='pend'});
+    d.notes=[];
+   });
    state.week=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2);
    filter='all';
    touch(); persist(); schedulePush(); render();
-   toast('Semana fechada e salva no histórico ✓');
+   toast('Semana fechada ✓ Pendências levadas para a semana nova');
  });
 }
 
@@ -501,7 +503,7 @@ function openHistory(){
   el.innerHTML=h.map(function(w){
    return '<div class="histItem" id="h-'+w.id+'">'
     +'<div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div>'
-    +'<div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+' · Pendente '+fmt(w.pend)+'</div></div>'
+    +'<div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+(w.carried!==undefined?' · Levado p/ semana seguinte '+fmt(w.carried):' · Pendente '+fmt(w.pend))+'</div></div>'
     +'<div class="tt">'+fmt(w.all)+'</div></div>'
     +'<div class="acts">'
     +'<button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button>'
@@ -589,7 +591,7 @@ function norm(s){
    notes:toArr(d.notes).filter(Boolean).map(function(n){return {id:n.id||uid(),t:n.t||''}})});
  });
  toArr(s.history).forEach(function(w){ if(!w) return;
-  o.history.push({id:w.id||uid(),week:w.week||'',closedAt:w.closedAt||'',paid:w.paid||0,pend:w.pend||0,all:w.all||0,
+  o.history.push({id:w.id||uid(),week:w.week||'',closedAt:w.closedAt||'',paid:w.paid||0,pend:w.pend||0,all:w.all||0,carried:(typeof w.carried==='number'?w.carried:undefined),
    text:w.text||'',drivers:toArr(w.drivers)});
  });
  return o;
