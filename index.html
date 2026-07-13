@@ -279,7 +279,7 @@ input,button,textarea{font-family:inherit}
 
 <script>
 'use strict';
-var APP_VER=12; // versão desta construção — o verificador compara com a do site
+var APP_VER=13; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -314,7 +314,7 @@ try{
 var LOCK=true; // proteção de valores: o app sempre abre travado
 function toggleLock(){
  if(LOCK){
-  ask('Destravar edição','Com a edição liberada é possível alterar valores, nomes e placas, excluir lançamentos e motoristas.\n\nOs botões ✅❌ e 💰 funcionam mesmo travado. Trave novamente ao terminar.','Destravar',function(){
+  ask('Destravar edição','Com a edição liberada é possível marcar pagamentos (✅❌ e 💰), alterar valores, nomes e placas, excluir lançamentos e motoristas.\n\nTrave novamente ao terminar.','Destravar',function(){
    LOCK=false; updateLockUI(); toast('🔓 Edição liberada — trave ao terminar');
   });
  }else{
@@ -477,6 +477,7 @@ function valBlur(inp,did,eid){
  updateTotals(); save();
 }
 function tgl(did,eid){
+ if(LOCK){toast('🔒 Travado — toque no cadeado para liberar');return;}
  var e=findE(findD(did),eid); e.s=(e.s==='paid'?'pend':'paid');
  save(); render();
 }
@@ -509,6 +510,7 @@ function delDriver(did){
 /* ---------- Pagamento parcial ---------- */
 var PART={did:null,eid:null};
 function openPartial(did,eid){
+ if(LOCK){toast('🔒 Travado — toque no cadeado para liberar');return;}
  var e=findE(findD(did),eid); if(!e)return;
  PART.did=did; PART.eid=eid;
  document.getElementById('pInfo').textContent='Lançamento pendente: '+fmt(e.v)+(e.d?' ('+e.d+')':'')+' — '+(findD(did).name||'motorista');
