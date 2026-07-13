@@ -173,6 +173,7 @@ input,button,textarea{font-family:inherit}
     <div class="htitle">SEMANAL – <input id="weekLabel" placeholder="dd/mm" maxlength="12"></div>
     <span style="display:flex;align-items:center;gap:8px"><span class="lockpill" id="lockPill" onclick="toggleLock()">🔒</span><span class="saved" id="savedTag">Salvo ✓</span><span class="syncpill" id="syncPill" onclick="openSync()">⚪ sem sync</span></span>
   </div>
+  <div id="verTag" style="font-size:10px;color:#9AA3AE;margin:1px 0 3px;letter-spacing:.2px"></div>
   <div class="totais">
     <div class="tot g" id="cardPaid" onclick="setFilter('paid')"><div class="lb">Recebido</div><div class="vl" id="totPaid">R$0,00</div></div>
     <div class="tot r" id="cardPend" onclick="setFilter('pend')"><div class="lb">Pendente</div><div class="vl" id="totPend">R$0,00</div></div>
@@ -279,7 +280,7 @@ input,button,textarea{font-family:inherit}
 
 <script>
 'use strict';
-var APP_VER=13; // versão desta construção — o verificador compara com a do site
+var APP_VER=15; var APP_DATE='13/07/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -307,18 +308,47 @@ function checkUpdate(){
  }catch(e){}
 }
 setTimeout(checkUpdate,4000);            // ao abrir
+try{
+ document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible') checkUpdate();   // app reaberto/descongelado
+ });
+ window.addEventListener('pageshow',function(e){ if(e&&e.persisted) checkUpdate(); });
+ window.addEventListener('focus',function(){ checkUpdate(); });
+}catch(e){}
+try{
+ var vt=document.getElementById('verTag');
+ if(vt) vt.textContent='Atualizado em '+APP_DATE+' · v'+APP_VER;
+ var lastV=parseInt(localStorage.getItem('guimas_app_ver')||'0',10);
+ if(lastV&&lastV<APP_VER) setTimeout(function(){toast('✅ App atualizado — versão de '+APP_DATE)},900);
+ localStorage.setItem('guimas_app_ver',String(APP_VER));
+}catch(e){}
 setInterval(checkUpdate,15*60*1000);     // e a cada 15 min com o app aberto
 try{
  if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.update()})});}
 }catch(e){}
 var LOCK=true; // proteção de valores: o app sempre abre travado
+function keepScreenStill(fn){
+ // Executa fn mantendo o card visível no mesmo lugar (tela não pula)
+ var a=null,at=0;
+ try{
+  var cs=document.querySelectorAll('.card');
+  for(var i=0;i<cs.length;i++){
+   var r=cs[i].getBoundingClientRect();
+   if(r.bottom>90){a=cs[i];at=r.top;break;}
+  }
+ }catch(e){}
+ fn();
+ try{
+  if(a){var d=a.getBoundingClientRect().top-at; if(d) window.scrollBy(0,d);}
+ }catch(e){}
+}
 function toggleLock(){
  if(LOCK){
   ask('Destravar edição','Com a edição liberada é possível marcar pagamentos (✅❌ e 💰), alterar valores, nomes e placas, excluir lançamentos e motoristas.\n\nTrave novamente ao terminar.','Destravar',function(){
-   LOCK=false; updateLockUI(); toast('🔓 Edição liberada — trave ao terminar');
+   LOCK=false; keepScreenStill(updateLockUI); toast('🔓 Edição liberada — trave ao terminar');
   });
  }else{
-  LOCK=true; updateLockUI(); toast('🔒 Valores protegidos');
+  LOCK=true; keepScreenStill(updateLockUI); toast('🔒 Valores protegidos');
  }
 }
 function updateLockUI(){
@@ -423,6 +453,7 @@ function updateFilterUI(shown){
 
 /* ---------- Render ---------- */
 function render(){
+ var _sy=0; try{_sy=window.scrollY||window.pageYOffset||document.documentElement.scrollTop||0;}catch(e){}
  document.getElementById('weekLabel').value=state.week;
  var html='', shown=0;
  state.drivers.forEach(function(d){
@@ -463,6 +494,7 @@ function render(){
  updateFilterUI(shown);
  updateTotals();
  updateLockUI();
+ try{window.scrollTo(0,_sy);}catch(e){}
 }
 
 /* ---------- Edição ---------- */
