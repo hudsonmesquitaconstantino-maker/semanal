@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Semanal">
-<link rel="apple-touch-icon" sizes="512x512" href="icone.png">
+<meta name="apple-mobile-web-app-title" content="GuimasCar">
+<link rel="apple-touch-icon" sizes="512x512" href="654E0F71-57E7-4657-A6EB-DAC27BAF451A.png?v=2">
 <link rel="icon" type="image/png" href="icone.png">
 <title>Semanal Guimas</title>
 <style>
@@ -33,6 +33,15 @@ header{position:sticky;top:0;z-index:50;background:rgba(238,241,244,.92);
   width:86px;padding:2px 4px;border-radius:6px}
 .htitle input:focus{outline:2px solid var(--primary);background:#fff}
 .saved{font-size:12px;color:var(--muted);opacity:0;transition:opacity .3s}
+.lockpill{font-size:15px;font-weight:800;padding:4px 12px;border-radius:99px;cursor:pointer;
+  background:var(--red-bg);border:1px solid #E7B9BF;-webkit-user-select:none;user-select:none}
+.lockpill.open{background:var(--green-bg);border-color:#B7E4C7}
+body.locked .del{display:none}
+body.locked .card-actions{display:none}
+body.locked .addDriver{display:none}
+body.locked .entry .val,body.locked .entry .desc,body.locked .who input,
+body.locked .plate input,body.locked .note input,body.locked #weekLabel{
+  pointer-events:none;background:transparent;border-color:transparent}
 .syncpill{font-size:11px;font-weight:800;padding:5px 10px;border-radius:99px;cursor:pointer;
   background:#E8ECF0;color:var(--muted);white-space:nowrap}
 .syncpill.on{background:var(--green-bg);color:var(--green)}
@@ -162,7 +171,7 @@ input,button,textarea{font-family:inherit}
 <header>
   <div class="hrow">
     <div class="htitle">SEMANAL – <input id="weekLabel" placeholder="dd/mm" maxlength="12"></div>
-    <span style="display:flex;align-items:center;gap:8px"><span class="saved" id="savedTag">Salvo ✓</span><span class="syncpill" id="syncPill" onclick="openSync()">⚪ sem sync</span></span>
+    <span style="display:flex;align-items:center;gap:8px"><span class="lockpill" id="lockPill" onclick="toggleLock()">🔒</span><span class="saved" id="savedTag">Salvo ✓</span><span class="syncpill" id="syncPill" onclick="openSync()">⚪ sem sync</span></span>
   </div>
   <div class="totais">
     <div class="tot g" id="cardPaid" onclick="setFilter('paid')"><div class="lb">Recebido</div><div class="vl" id="totPaid">R$0,00</div></div>
@@ -270,7 +279,56 @@ input,button,textarea{font-family:inherit}
 
 <script>
 'use strict';
+var APP_VER=12; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
+function safeToReload(){
+ try{
+  var a=document.activeElement;
+  if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'))return false;
+  var ovs=document.querySelectorAll?document.querySelectorAll('.overlay.open'):[];
+  if(ovs&&ovs.length)return false;
+ }catch(e){}
+ return true;
+}
+var _updFound=false;
+function checkUpdate(){
+ try{
+  fetch('index.html?upd='+Date.now(),{cache:'no-store'}).then(function(r){return r.text()}).then(function(t){
+   var m=t.match(/APP_VER=(\d+)/);
+   if(m&&parseInt(m[1],10)>APP_VER&&!_updFound){
+    _updFound=true;
+    toast('⬆️ Atualizando para a versão nova…');
+    setTimeout(function tryReload(){
+     if(safeToReload()){location.reload();}
+     else{setTimeout(tryReload,20000);}
+    },1500);
+   }
+  }).catch(function(){});
+ }catch(e){}
+}
+setTimeout(checkUpdate,4000);            // ao abrir
+setInterval(checkUpdate,15*60*1000);     // e a cada 15 min com o app aberto
+try{
+ if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.update()})});}
+}catch(e){}
+var LOCK=true; // proteção de valores: o app sempre abre travado
+function toggleLock(){
+ if(LOCK){
+  ask('Destravar edição','Com a edição liberada é possível alterar valores, nomes e placas, excluir lançamentos e motoristas.\n\nOs botões ✅❌ e 💰 funcionam mesmo travado. Trave novamente ao terminar.','Destravar',function(){
+   LOCK=false; updateLockUI(); toast('🔓 Edição liberada — trave ao terminar');
+  });
+ }else{
+  LOCK=true; updateLockUI(); toast('🔒 Valores protegidos');
+ }
+}
+function updateLockUI(){
+ try{
+  document.body.classList.toggle('locked',LOCK);
+  var p=document.getElementById('lockPill');
+  p.className='lockpill'+(LOCK?'':' open');
+  p.textContent=LOCK?'🔒':'🔓';
+ }catch(e){}
+}
 var state=null, saveTimer=null, uid=function(){return Math.random().toString(36).slice(2,9)};
 
 /* ---------- Dados iniciais (semana 08/07, placas completas) ---------- */
@@ -404,6 +462,7 @@ function render(){
  document.getElementById('list').innerHTML=html;
  updateFilterUI(shown);
  updateTotals();
+ updateLockUI();
 }
 
 /* ---------- Edição ---------- */

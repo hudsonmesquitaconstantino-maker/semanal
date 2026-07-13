@@ -1,5 +1,5 @@
 /* Offline permanente + atualizações automáticas — Semanal Guimas v6 */
-var CACHE='semanal-guimas-v6';
+var CACHE='semanal-guimas-v7';
 self.addEventListener('install',function(e){
  e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(['./','./index.html'])}));
  self.skipWaiting();
