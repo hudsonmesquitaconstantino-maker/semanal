@@ -259,6 +259,23 @@ input,button,textarea{font-family:inherit}
   </div>
 </div>
 
+<!-- Editar semana do histórico -->
+<div class="overlay" id="ovEditHist" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="sheet">
+    <button class="close" onclick="document.getElementById('ovEditHist').classList.remove('open')">✕</button>
+    <h3>Editar semana</h3>
+    <div class="askMsg" id="ehInfo"></div>
+    <div class="synclbl">Data da semana (ex.: 28/07)</div>
+    <input class="syncfield" id="ehWeek" placeholder="dd/mm" maxlength="12">
+    <div class="synclbl">Fechada em (ex.: 03/08/2026)</div>
+    <input class="syncfield" id="ehClosed" placeholder="dd/mm/aaaa" maxlength="12">
+    <div class="row">
+      <button class="btn ghost" style="flex:1" onclick="document.getElementById('ovEditHist').classList.remove('open')">Cancelar</button>
+      <button class="btn primary" onclick="saveHistEdit()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Pagamento parcial -->
 <div class="overlay" id="ovPartial" onclick="if(event.target===this)this.classList.remove('open')">
   <div class="sheet">
@@ -280,7 +297,7 @@ input,button,textarea{font-family:inherit}
 
 <script>
 'use strict';
-var APP_VER=15; var APP_DATE='13/07/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=16; var APP_DATE='03/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -657,11 +674,37 @@ function openHistory(){
     +'<div class="acts">'
     +'<button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button>'
     +'<button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button>'
+    +'<button class="mini" onclick="openHistEdit(\''+w.id+'\')">✏️ Editar</button>'
     +'<button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div>'
     +'<pre>'+esc(w.text)+'</pre></div>';
   }).join('');
  }
  document.getElementById('ovHist').classList.add('open');
+}
+var EH_ID=null;
+function openHistEdit(id){
+ var w=state.history.filter(function(x){return x.id===id})[0]; if(!w)return;
+ EH_ID=id;
+ document.getElementById('ehInfo').textContent='Semana de '+fmt(w.all)+' — corrigir as datas não altera nenhum valor.';
+ document.getElementById('ehWeek').value=w.week||'';
+ document.getElementById('ehClosed').value=w.closedAt||'';
+ document.getElementById('ovEditHist').classList.add('open');
+}
+function saveHistEdit(){
+ var w=state.history.filter(function(x){return x.id===EH_ID})[0]; if(!w)return;
+ var nw=(document.getElementById('ehWeek').value||'').trim();
+ var nc=(document.getElementById('ehClosed').value||'').trim();
+ if(!nw){toast('⚠️ Informe a data da semana');return}
+ var old=w.week;
+ w.week=nw; w.closedAt=nc;
+ // o texto salvo (usado no Copiar) acompanha a correção
+ if(typeof w.text==='string'&&w.text){
+  w.text=w.text.replace('*SEMANAL - '+old+'*','*SEMANAL - '+nw+'*');
+ }
+ touch(); persist(); schedulePush();
+ document.getElementById('ovEditHist').classList.remove('open');
+ openHistory();
+ toast('Semana corrigida ✓');
 }
 function copyHist(id){
  var w=state.history.filter(function(x){return x.id===id})[0]; if(!w)return;
