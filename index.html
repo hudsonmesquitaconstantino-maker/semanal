@@ -2,9 +2,10 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#F3F5F7">
 <meta name="apple-mobile-web-app-title" content="GuimasCar">
 <link rel="apple-touch-icon" sizes="512x512" href="654E0F71-57E7-4657-A6EB-DAC27BAF451A.png?v=2">
 <link rel="icon" type="image/png" href="icone.png">
@@ -164,16 +165,222 @@ pre.preview{flex:1;overflow:auto;background:#F5F7F9;border:1px solid var(--line)
   font-weight:700;opacity:0;pointer-events:none;transition:opacity .25s;max-width:88%;text-align:center}
 .toast.show{opacity:1}
 input,button,textarea{font-family:inherit}
+
+
+/* ============================================================
+   GUIMASCAR SUITE — SEMANAL v17
+   Linguagem visual compacta alinhada ao Gestão v103 / Despesas v12.
+   ============================================================ */
+:root{
+  --bg:#F3F5F7;
+  --card:#FFFFFF;
+  --ink:#171B20;
+  --muted:#737A83;
+  --line:rgba(24,31,39,.085);
+  --green:#258553;
+  --green-bg:#EDF8F1;
+  --red:#C44B4B;
+  --red-bg:#FCEFEF;
+  --blue:#174A8C;
+  --primary:#277F50;
+  --amber:#D89A28;
+  --radius:18px;
+  --mono:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display",system-ui,sans-serif;
+  --shadow:0 7px 24px rgba(16,24,32,.045),0 1px 2px rgba(16,24,32,.035);
+  --float:0 12px 34px rgba(16,24,32,.14),0 2px 7px rgba(16,24,32,.07);
+  --ease:cubic-bezier(.22,.72,.18,1);
+}
+html,body{
+  background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display",system-ui,sans-serif;
+}
+body{padding-bottom:calc(90px + env(safe-area-inset-bottom));min-height:100dvh}
+button,input,textarea{font-family:inherit}
+
+/* Cabeçalho compacto */
+header{
+  top:0;
+  padding:calc(8px + env(safe-area-inset-top)) 14px 9px;
+  background:rgba(243,245,247,.90);
+  border-bottom:1px solid rgba(24,31,39,.055);
+  -webkit-backdrop-filter:blur(22px) saturate(145%);
+  backdrop-filter:blur(22px) saturate(145%);
+  box-shadow:none;
+}
+.suiteHead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.suiteEyebrow{font-size:9px;line-height:1.2;font-weight:800;letter-spacing:1.55px;color:#9097A0;margin-bottom:2px}
+.suiteTitle{font-size:24px;line-height:1.02;font-weight:800;letter-spacing:-.75px}
+.headStatus{display:flex;align-items:center;gap:7px;min-width:0}
+.saved{font-size:10px;font-weight:700;white-space:nowrap}
+.syncpill{
+  min-height:34px;display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:750;padding:6px 10px;border-radius:999px;
+  border:1px solid rgba(24,31,39,.06);background:#ECEFF2;color:var(--muted);
+  box-shadow:0 1px 2px rgba(16,24,32,.025);
+}
+.syncpill.on{background:#ECF7F0;color:var(--green);border-color:rgba(37,133,83,.13)}
+.syncpill.wait{background:#FFF5E2;color:#9B6A0B;border-color:rgba(216,154,40,.14)}
+.periodLine{
+  margin-top:7px;display:grid;grid-template-columns:auto 86px 1fr;align-items:center;gap:7px;
+  min-height:31px;padding:3px 4px 3px 9px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.72)
+}
+.periodLine label{font-size:9px;font-weight:850;letter-spacing:1.15px;color:#8C939C}
+#weekLabel{
+  width:86px;min-width:0;border:0;background:transparent;border-radius:8px;padding:5px 6px;
+  font-size:14px;font-weight:800;letter-spacing:-.15px;color:var(--ink);text-align:left
+}
+#weekLabel:focus{outline:none;background:#fff;box-shadow:0 0 0 2px rgba(39,127,80,.10)}
+#verTag{justify-self:end;font-size:9px;color:#A0A6AD;letter-spacing:.05px;white-space:nowrap}
+.totais{grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:7px}
+.tot{
+  min-height:56px;border:1px solid var(--line);border-radius:14px;padding:8px 7px;text-align:left;
+  background:rgba(255,255,255,.86);box-shadow:0 2px 9px rgba(16,24,32,.025);transition:.16s var(--ease)
+}
+.tot:active{transform:scale(.985)}
+.tot .lb{font-size:8.5px;font-weight:800;letter-spacing:.85px;color:#8B929B}
+.tot .vl{font-family:inherit;font-size:15px;line-height:1.12;font-weight:800;letter-spacing:-.45px;margin-top:5px;overflow:hidden;text-overflow:ellipsis}
+.tot.g .vl{color:var(--green)} .tot.r .vl{color:var(--red)}
+.tot.active{box-shadow:0 0 0 1.5px rgba(23,27,32,.65) inset;background:#fff}
+.tot.g.active{box-shadow:0 0 0 1.5px rgba(37,133,83,.45) inset;background:var(--green-bg)}
+.tot.r.active{box-shadow:0 0 0 1.5px rgba(196,75,75,.42) inset;background:var(--red-bg)}
+.filterbar{margin-top:7px;padding:6px 8px;border-radius:10px;font-size:11px}
+.filterbar button{padding:6px 9px;border-radius:9px;font-size:10px}
+
+/* Motoristas / cartões */
+main{padding:10px 10px 0;gap:9px}
+.card{
+  border:1px solid var(--line);border-radius:18px;padding:10px;background:rgba(255,255,255,.94);
+  box-shadow:var(--shadow);overflow:hidden
+}
+.card-head{gap:9px;align-items:center}
+.plate{width:78px;border:1.5px solid #52565B;border-radius:7px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.plate .bar{height:8px;background:#174A8C}
+.plate input{font-family:inherit;font-size:12px;font-weight:850;letter-spacing:.2px;padding:4px 1px}
+.who .nm{font-size:16px;font-weight:800;letter-spacing:-.2px}
+.who input{padding:1px 3px}
+.carrow{margin-top:2px;gap:3px}
+.carrow input{font-size:11px;font-weight:600;color:#7B828B}
+.subtot{font-family:inherit;font-size:13px;font-weight:800;letter-spacing:-.25px}
+.subtot .q{font-size:9.5px;font-weight:700;margin-top:2px}
+.entries{margin-top:8px;gap:4px;border-top:1px solid rgba(24,31,39,.055);padding-top:6px}
+.entry{gap:4px;min-height:38px}
+.entry .val{
+  width:91px;font-family:inherit;font-size:13px;font-weight:780;border:1px solid transparent;
+  border-radius:10px;padding:8px 6px;background:#F7F8FA;letter-spacing:-.25px
+}
+.entry .desc{font-size:12.5px;border:1px solid transparent;border-radius:10px;padding:8px 6px;background:#F7F8FA}
+.entry input:focus{outline:none;border-color:rgba(39,127,80,.35);box-shadow:0 0 0 2px rgba(39,127,80,.08);background:#fff}
+.st{
+  width:36px;height:36px;border-radius:11px;border:1px solid var(--line);font-size:15px;background:#F5F6F8;
+  display:flex;align-items:center;justify-content:center;padding:0;transition:.14s var(--ease)
+}
+.st:active{transform:scale(.92)}
+.st.paid{background:var(--green-bg);border-color:rgba(37,133,83,.16)}
+.st.pend{background:var(--red-bg);border-color:rgba(196,75,75,.16)}
+.st.part{width:34px;height:36px;background:#FFF7E8;border-color:rgba(216,154,40,.18);font-size:14px}
+.del{width:22px;height:36px;font-size:18px}
+.note{margin-top:3px}
+.note input{padding:8px 8px;border-radius:10px;font-size:12px;background:#FFFBEE}
+.card-actions{gap:6px;margin-top:7px;padding-top:6px;border-top:1px solid rgba(24,31,39,.045)}
+.mini{border:1px solid var(--line);border-radius:10px;padding:7px 9px;font-size:11px;background:#F5F6F8}
+.mini.danger{border-color:transparent;background:transparent;font-size:10.5px}
+.addDriver{
+  margin:1px 10px 14px;width:calc(100% - 20px);padding:11px;border:1px dashed rgba(39,127,80,.28);
+  border-radius:14px;background:rgba(255,255,255,.55);font-size:12px;font-weight:750;color:var(--primary)
+}
+.empty{font-size:13px;line-height:1.55;padding:25px 12px}
+
+/* Bloqueio permanente na barra inferior */
+.bottombar{
+  left:10px;right:10px;bottom:calc(7px + env(safe-area-inset-bottom));
+  padding:7px;gap:7px;border:1px solid rgba(24,31,39,.07);border-radius:19px;
+  background:rgba(250,251,252,.92);-webkit-backdrop-filter:blur(24px) saturate(150%);backdrop-filter:blur(24px) saturate(150%);
+  box-shadow:var(--float)
+}
+.btn{min-height:48px;border-radius:14px;padding:11px 12px;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:6px}
+.btn.primary{background:linear-gradient(180deg,#318B5A,#277A4E);box-shadow:0 4px 12px rgba(39,127,80,.15)}
+.btn.ghost{padding:11px 12px;background:#F4F5F7;border:1px solid rgba(24,31,39,.045)}
+.bi{font-size:17px;line-height:1}
+.lockpill{
+  width:48px;height:48px;padding:0;border-radius:14px;display:flex;align-items:center;justify-content:center;
+  flex:0 0 48px;font-size:18px;background:#FFF3F3;border:1px solid rgba(196,75,75,.17);box-shadow:none;
+  transition:.16s var(--ease)
+}
+.lockpill.open{background:#EDF8F1;border-color:rgba(37,133,83,.17)}
+.lockpill:active{transform:scale(.94)}
+body.locked .entry .val,body.locked .entry .desc,body.locked .who input,
+body.locked .plate input,body.locked .note input,body.locked #weekLabel{background:transparent}
+
+/* Sheets / menus */
+.overlay{
+  background:rgba(17,23,30,.32);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  opacity:0;pointer-events:none;display:flex;transition:opacity .18s ease
+}
+.overlay.open{opacity:1;pointer-events:auto}
+.sheet{
+  width:calc(100% - 12px);max-width:560px;border-radius:24px 24px 0 0;
+  padding:12px 14px calc(18px + env(safe-area-inset-bottom));max-height:min(82dvh,720px);
+  box-shadow:0 -12px 48px rgba(15,22,30,.13);transform:translateY(20px);opacity:.94;
+  transition:transform .24s var(--ease),opacity .18s ease;overflow:auto
+}
+.overlay.open .sheet{transform:translateY(0);opacity:1}
+.sheet:before{content:"";display:block;width:38px;height:5px;border-radius:999px;background:#D9DCE0;margin:0 auto 10px}
+.sheet h3{font-size:18px;font-weight:800;letter-spacing:-.3px;margin-bottom:10px;padding-right:46px}
+.sheet .close{
+  right:10px;top:9px;width:44px;height:44px;border-radius:50%;font-size:15px;background:#F0F2F4;color:#505760;
+  display:flex;align-items:center;justify-content:center
+}
+.menu{display:flex;flex-direction:column;gap:7px}
+.menu button{
+  padding:12px 12px;border:1px solid var(--line);border-radius:13px;background:#F7F8FA;
+  font-size:13px;font-weight:680;border-bottom:1px solid var(--line)
+}
+.menu button:last-child{border-bottom:1px solid var(--line)}
+.syncfield{border-radius:12px;padding:11px;background:#F7F8FA;font-size:14px}
+textarea.syncfield{font-size:11px;min-height:92px}
+.synclbl{font-size:9px;letter-spacing:1px;margin:9px 0 4px}
+.sheet .row{gap:7px;margin-top:12px}
+.askMsg{font-size:13px;line-height:1.5;margin-bottom:12px;color:#666E77}
+.pprev{font-size:13px;line-height:1.5;margin:3px 0 10px}
+pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
+.histItem{border-radius:14px;padding:11px;margin-bottom:8px;background:#FAFBFC}
+.histItem .lbl{font-size:13px}
+.histItem .tt{font-family:inherit;font-size:13px;font-weight:800}
+.histItem .sub{font-size:10.5px;line-height:1.45}
+.histItem .acts{gap:5px;margin-top:8px;flex-wrap:wrap}
+.histItem pre{font-family:inherit;font-size:10.5px}
+.toast{
+  bottom:calc(82px + env(safe-area-inset-bottom));background:rgba(24,29,35,.94);font-size:12px;font-weight:700;
+  padding:10px 14px;border-radius:999px;box-shadow:0 8px 24px rgba(16,24,32,.18);transition:.2s var(--ease)
+}
+
+@media (max-width:390px){
+  .suiteTitle{font-size:22px}.syncpill{font-size:10px;padding:5px 8px}.periodLine{grid-template-columns:auto 76px 1fr}
+  #weekLabel{width:76px;font-size:13px}.tot .vl{font-size:13px}.plate{width:72px}.who .nm{font-size:15px}
+  .entry .val{width:84px;font-size:12px}.entry .desc{font-size:12px}.st{width:34px}.lockpill{width:46px;height:46px;flex-basis:46px}
+  .btn{min-height:46px;padding:10px 9px}.bottombar{left:7px;right:7px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+
 </style>
 </head>
 <body>
 
 <header>
-  <div class="hrow">
-    <div class="htitle">SEMANAL – <input id="weekLabel" placeholder="dd/mm" maxlength="12"></div>
-    <span style="display:flex;align-items:center;gap:8px"><span class="lockpill" id="lockPill" onclick="toggleLock()">🔒</span><span class="saved" id="savedTag">Salvo ✓</span><span class="syncpill" id="syncPill" onclick="openSync()">⚪ sem sync</span></span>
+  <div class="suiteHead">
+    <div>
+      <div class="suiteEyebrow">GUIMASCAR · RECEBIMENTOS</div>
+      <div class="suiteTitle">Semanal</div>
+    </div>
+    <span class="headStatus"><span class="saved" id="savedTag">Salvo ✓</span><span class="syncpill" id="syncPill" onclick="openSync()">⚪ sem sync</span></span>
   </div>
-  <div id="verTag" style="font-size:10px;color:#9AA3AE;margin:1px 0 3px;letter-spacing:.2px"></div>
+  <div class="periodLine">
+    <label for="weekLabel">SEMANA</label>
+    <input id="weekLabel" placeholder="dd/mm" maxlength="12">
+    <div id="verTag"></div>
+  </div>
   <div class="totais">
     <div class="tot g" id="cardPaid" onclick="setFilter('paid')"><div class="lb">Recebido</div><div class="vl" id="totPaid">R$0,00</div></div>
     <div class="tot r" id="cardPend" onclick="setFilter('pend')"><div class="lb">Pendente</div><div class="vl" id="totPend">R$0,00</div></div>
@@ -189,8 +396,9 @@ input,button,textarea{font-family:inherit}
 <button class="addDriver" onclick="addDriver()">+ Adicionar motorista</button>
 
 <div class="bottombar">
-  <button class="btn primary" onclick="openWhats()">📤 WhatsApp</button>
-  <button class="btn ghost" onclick="openMenu()">☰ Menu</button>
+  <button class="btn primary" onclick="openWhats()"><span class="bi">↗</span><span>WhatsApp</span></button>
+  <span class="lockpill" id="lockPill" onclick="toggleLock()" role="button" aria-label="Bloquear ou desbloquear edição">🔒</span>
+  <button class="btn ghost" onclick="openMenu()"><span class="bi">☰</span><span>Menu</span></button>
 </div>
 
 <!-- Menu -->
@@ -297,7 +505,7 @@ input,button,textarea{font-family:inherit}
 
 <script>
 'use strict';
-var APP_VER=16; var APP_DATE='03/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=17; var APP_DATE='23/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
