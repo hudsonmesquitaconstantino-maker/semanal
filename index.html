@@ -505,7 +505,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=21; var APP_DATE='24/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=22; var APP_DATE='24/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -908,7 +908,24 @@ document.getElementById('weekLabel').addEventListener('input',function(){state.w
 
 /* ================= SINCRONIZAÇÃO (Firebase Realtime Database) ================= */
 var DEV=(function(){try{var d=localStorage.getItem('guimas_dev');if(!d){d=uid()+uid();localStorage.setItem('guimas_dev',d)}return d}catch(e){return uid()}})();
-var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false,gotRemote:false};
+var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false,gotRemote:false,lastToastAt:0};
+
+/* Compara o CONTEÚDO sincronizado sem deixar rev/dev ou ordem de arrays criarem
+   falsos conflitos. Isso impede o ciclo recebe → regrava → recebe. */
+function _canonSync(x,root){
+ if(Array.isArray(x)){
+  var a=x.map(function(v){return _canonSync(v,false)});
+  a.sort(function(u,v){var A=JSON.stringify(u),B=JSON.stringify(v);return A<B?-1:(A>B?1:0)});
+  return a;
+ }
+ if(x&&typeof x==='object'){
+  var o={};Object.keys(x).sort().forEach(function(k){if(root&&(k==='rev'||k==='dev'))return;o[k]=_canonSync(x[k],false)});return o;
+ }
+ return x;
+}
+function _syncSig(x){return JSON.stringify(_canonSync(x||{},true))}
+function _syncIgual(a,b){return _syncSig(a)===_syncSig(b)}
+function _toastSync(){var n=Date.now();if(n-SYNC.lastToastAt<3000)return;SYNC.lastToastAt=n;toast('🔄 Sincronização atualizada')}
 
 function touch(){state.rev=Date.now();state.dev=DEV;}
 function toArr(x){
@@ -977,8 +994,24 @@ function startSync(){
  });
 }
 function push(){
- if(!SYNC.ref||!SYNC.gotRemote){SYNC.pendingPush=true;return}SYNC.pendingPush=false;var local=norm(state);
- SYNC.ref.transaction(function(cur){var junto=cur?_mergeState(cur,local):local;junto.rev=Math.max(_ag(),Number(local.rev)||0,Number(cur&&cur.rev)||0);junto.dev=DEV;return junto},function(err,committed,snap){if(err||!committed){SYNC.pendingPush=true;return}if(snap&&snap.val()){var remoto=norm(snap.val()),atual=norm(state),junto=_mergeState(remoto,atual),precisa=JSON.stringify(junto)!==JSON.stringify(remoto);state=junto;persist();if(!inputFocused())render();if(precisa){touch();persist();schedulePush()}}},false);
+ if(!SYNC.ref||!SYNC.gotRemote){SYNC.pendingPush=true;return}
+ SYNC.pendingPush=false;var local=norm(state);
+ SYNC.ref.transaction(function(cur){
+  var junto=cur?_mergeState(cur,local):local;
+  /* Se a nuvem já contém o mesmo conteúdo, aborta a transação. Não cria um rev
+     artificial só por abrir/ocultar o app e não dispara outro snapshot. */
+  if(cur&&_syncIgual(junto,cur))return;
+  junto.rev=Math.max(_ag(),Number(local.rev)||0,Number(cur&&cur.rev)||0);junto.dev=DEV;return junto;
+ },function(err,committed,snap){
+  if(err){SYNC.pendingPush=true;return}
+  if(!committed){SYNC.pendingPush=false;return}
+  if(snap&&snap.val()){
+   var remoto=norm(snap.val()),atual=norm(state),junto=_mergeState(remoto,atual);
+   var mudaLocal=!_syncIgual(junto,atual),precisaNuvem=!_syncIgual(junto,remoto);
+   if(mudaLocal){state=junto;persist();if(!inputFocused())render()}
+   if(precisaNuvem){touch();persist();schedulePush()}
+  }
+ },false);
 }
 function schedulePush(){
  clearTimeout(SYNC.pushTimer);
@@ -989,10 +1022,19 @@ function inputFocused(){
  return !!(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'));
 }
 function onRemote(v){
- if(!v)return;SYNC.gotRemote=true;var rem=norm(v);if(inputFocused()){SYNC.pendingRemote=SYNC.pendingRemote?_mergeState(SYNC.pendingRemote,rem):rem;return}adopt(rem);
+ if(!v)return;SYNC.gotRemote=true;var rem=norm(v);
+ if(inputFocused()){SYNC.pendingRemote=SYNC.pendingRemote?_mergeState(SYNC.pendingRemote,rem):rem;return}
+ adopt(rem);
 }
 function adopt(v){
- var rem=norm(v),junto=_mergeState(rem,state),precisa=JSON.stringify(junto)!==JSON.stringify(rem);state=junto;SYNC.pendingRemote=null;persist();filter='all';render();if(precisa){touch();persist();schedulePush()}toast('🔄 Sincronização conferida');
+ var rem=norm(v),atual=norm(state),junto=_mergeState(rem,atual);
+ var mudaLocal=!_syncIgual(junto,atual),precisaNuvem=!_syncIgual(junto,rem);
+ SYNC.pendingRemote=null;
+ /* Eco da própria gravação ou snapshot semanticamente idêntico: não renderiza,
+    não mostra toast e, principalmente, não agenda nova gravação. */
+ if(!mudaLocal&&!precisaNuvem)return;
+ if(mudaLocal){state=junto;persist();filter='all';render();_toastSync()}
+ if(precisaNuvem){if(!mudaLocal)state=junto;touch();persist();schedulePush()}
 }
 setInterval(function(){ if(SYNC.pendingRemote&&!inputFocused()) adopt(SYNC.pendingRemote); },1500);
 try{
