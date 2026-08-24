@@ -505,7 +505,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=17; var APP_DATE='23/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=21; var APP_DATE='24/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -586,10 +586,81 @@ function updateLockUI(){
 }
 var state=null, saveTimer=null, uid=function(){return Math.random().toString(36).slice(2,9)};
 
-/* ---------- Dados iniciais (semana 08/07, placas completas) ---------- */
-function seed(){
- return {week:'',history:[],drivers:[]};
+
+/* ===== INTEGRIDADE DISTRIBUÍDA v18 =====
+   Cada motorista, lançamento, observação e semana fechada possui versão própria.
+   Exclusões são lápides permanentes (del=true), então um aparelho antigo/offline não
+   consegue ressuscitar um dado apagado. O merge é determinístico e roda também após
+   snapshots que ficaram aguardando enquanto alguém digitava. */
+function _ag(){return Date.now()}
+function _mark(o){if(!o)return;o.at=_ag();o.by=DEV}
+function _meta(o){return {at:Number(o&&o.at)||0,by:String(o&&o.by||'')}}
+function _newer(a,b){
+ if(!a)return b;if(!b)return a;
+ if(!!a.del!==!!b.del){if(a.del||b.del)return a.del?a:b} /* tombstone é definitivo */
+ var ma=_meta(a),mb=_meta(b);if(ma.at!==mb.at)return mb.at>ma.at?b:a;
+ if(ma.by!==mb.by)return mb.by>ma.by?b:a;
+ return JSON.stringify(b)>JSON.stringify(a)?b:a;
 }
+function _active(a){return toArr(a).filter(function(x){return x&&!x.del})}
+function _periodKey(week,closedAt){
+ var p=String(closedAt||'').split('/'),ano=p[2]||String(new Date().getFullYear());
+ return 'wk:'+ano+':'+String(week||'').trim();
+}
+function _weekOrdem(week,at){
+ var p=String(week||'').trim().split('/'),d=parseInt(p[0],10),m=parseInt(p[1],10);if(isNaN(d)||isNaN(m)||m<1||m>12||d<1||d>31)return 0;
+ var ref=at?new Date(Number(at)):new Date();if(isNaN(ref.getTime()))ref=new Date();var y=ref.getFullYear(),dt=new Date(y,m-1,d),dif=dt.getTime()-ref.getTime(),lim=183*86400000;
+ if(dif>lim)y--;else if(dif<-lim)y++;return y*10000+m*100+d;
+}
+function _mergeEntry(a,b){return _newer(a,b)}
+function _mergeNote(a,b){return _newer(a,b)}
+function _mergeById(A,B,merger,keyFn){
+ var m={};
+ function add(x){if(!x)return;var k=(keyFn?keyFn(x):x.id)||('anon:'+JSON.stringify(x));m[k]=m[k]?merger(m[k],x):x}
+ toArr(A).forEach(add);toArr(B).forEach(add);
+ return Object.keys(m).sort().map(function(k){return m[k]});
+}
+function _mergeDriver(a,b){
+ if(!a)return b;if(!b)return a;if(a.del||b.del)return _newer(a,b);
+ var base=_newer(a,b),out={};for(var k in base)if(Object.prototype.hasOwnProperty.call(base,k))out[k]=base[k];
+ out.entries=_mergeById(a.entries,b.entries,_mergeEntry);out.notes=_mergeById(a.notes,b.notes,_mergeNote);
+ return out;
+}
+function _histRecalc(w){
+ if(!w||w.del)return w;var ds=_active(w.drivers).map(function(d){var c=JSON.parse(JSON.stringify(d));c.entries=_active(c.entries);c.notes=_active(c.notes);return c});
+ var tt=totals(ds);w.drivers=ds;w.paid=tt.paid;w.pend=tt.pend;w.all=tt.paid;w.carried=tt.pend;w.text=buildText(ds,w.week);return w;
+}
+function _mergeHist(a,b){
+ if(!a)return b;if(!b)return a;if(a.del||b.del)return _newer(a,b);
+ var base=_newer(a,b),out={};for(var k in base)if(Object.prototype.hasOwnProperty.call(base,k))out[k]=base[k];
+ out.periodKey=a.periodKey||b.periodKey||_periodKey(out.week,out.closedAt);
+ out.drivers=_mergeById(a.drivers,b.drivers,_mergeDriver);
+ return _histRecalc(out);
+}
+function _mergeHistoryList(A,B){
+ /* Primeiro resolve o MESMO registro pelo id (inclusive quando a data/periodKey foi editada);
+    depois deduplica fechamentos concorrentes que nasceram com ids diferentes no mesmo período. */
+ var porId=_mergeById(A,B,_mergeHist),m={};porId.forEach(function(w){if(!w)return;var k=w.periodKey||_periodKey(w.week,w.closedAt)||('id:'+w.id);m[k]=m[k]?_mergeHist(m[k],w):w});return Object.keys(m).sort().map(function(k){return m[k]})
+}
+function _mergeState(a,b){
+ a=norm(a||{});b=norm(b||{});var reset=Math.max(Number(a.resetAt)||0,Number(b.resetAt)||0);
+ /* Importação substitutiva abre um novo epoch. Objetos antigos são cortados antes do
+    merge, mas uma edição realmente feita depois do reset continua podendo entrar. */
+ function clip(s){if(!reset)return s;var ds=[];toArr(s.drivers).forEach(function(d){if(!d)return;var c=JSON.parse(JSON.stringify(d));c.entries=toArr(c.entries).filter(function(e){return (Number(e&&e.at)||0)>=reset});c.notes=toArr(c.notes).filter(function(n){return (Number(n&&n.at)||0)>=reset});var raiz=(Number(c.at)||0)>=reset;if(raiz||c.entries.length||c.notes.length)ds.push(c)});s.drivers=ds;s.history=toArr(s.history).filter(function(w){return (Number(w&&w.at)||0)>=reset});return s}
+ a=clip(a);b=clip(b);var out={},aw=Number(a.weekAt)||0,bw=Number(b.weekAt)||0,ao=_weekOrdem(a.week,aw),bo=_weekOrdem(b.week,bw);
+ /* A semana corrente nunca regride: calendário primeiro; carimbo/device só desempata a mesma semana. */
+ if(bo>ao||(bo===ao&&(bw>aw||(bw===aw&&String(b.dev||'')>String(a.dev||''))))){out.week=b.week;out.weekAt=bw}else{out.week=a.week;out.weekAt=aw}
+ out.drivers=_mergeById(a.drivers,b.drivers,_mergeDriver);out.history=_mergeHistoryList(a.history,b.history);out.resetAt=reset;
+ if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
+ out.rev=Math.max(Number(a.rev)||0,Number(b.rev)||0);out.dev=(Number(b.rev)||0)>(Number(a.rev)||0)?b.dev:((Number(b.rev)||0)<(Number(a.rev)||0)?a.dev:(String(b.dev||'')>String(a.dev||'')?b.dev:a.dev));return norm(out);
+}
+function driversAtivos(){return _active(state.drivers)}
+function entriesAtivas(d){return _active(d&&d.entries)}
+function notesAtivas(d){return _active(d&&d.notes)}
+function histAtivo(){return _active(state.history)}
+
+/* ---------- Dados iniciais (semana 08/07, placas completas) ---------- */
+function seed(){ return {week:'',weekAt:0,resetAt:0,history:[],drivers:[]}; }
 
 /* ---------- Persistência ---------- */
 function load(){
@@ -602,7 +673,7 @@ function persist(){
    setTimeout(function(){t.classList.remove('show')},1200);
  }catch(e){ toast('⚠️ Falha ao salvar. Exporte um backup!'); }
 }
-function save(){ touch(); clearTimeout(saveTimer); saveTimer=setTimeout(function(){persist();schedulePush();},300); }
+function save(){ touch(); persist(); clearTimeout(saveTimer); saveTimer=setTimeout(function(){schedulePush();},300); }
 
 /* ---------- Confirmação própria ---------- */
 var askCb=null;
@@ -638,29 +709,17 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 /* ---------- Totais ---------- */
 function totals(drivers){
  var p=0,q=0;
- drivers.forEach(function(d){d.entries.forEach(function(e){
-   if(e.s==='paid') p+=e.v; else q+=e.v;
- })});
+ _active(drivers).forEach(function(d){entriesAtivas(d).forEach(function(e){if(e.s==='paid')p+=e.v;else q+=e.v})});
  return {paid:p,pend:q,all:p+q};
 }
 function updateTotals(){
- var t=totals(state.drivers);
- document.getElementById('totPaid').textContent=fmt(t.paid);
- document.getElementById('totPend').textContent=fmt(t.pend);
- document.getElementById('totAll').textContent=fmt(t.all);
- state.drivers.forEach(function(d){
-   var el=document.getElementById('sub-'+d.id); if(!el) return;
-   var p=0,q=0; d.entries.forEach(function(e){ if(e.s==='paid')p+=e.v; else q+=e.v });
-   el.innerHTML='<span class="p">'+fmt(p)+'</span>'+(q?'<span class="q">'+fmt(q)+' pend.</span>':'');
- });
+ var t=totals(driversAtivos());document.getElementById('totPaid').textContent=fmt(t.paid);document.getElementById('totPend').textContent=fmt(t.pend);document.getElementById('totAll').textContent=fmt(t.all);
+ driversAtivos().forEach(function(d){var el=document.getElementById('sub-'+d.id);if(!el)return;var p=0,q=0;entriesAtivas(d).forEach(function(e){if(e.s==='paid')p+=e.v;else q+=e.v});el.innerHTML='<span class="p">'+fmt(p)+'</span>'+(q?'<span class="q">'+fmt(q)+' pend.</span>':'')});
 }
 
 /* ---------- Filtro ---------- */
 var filter='all';
-function matchFilter(d){
- if(filter==='all') return true;
- return d.entries.some(function(e){return e.s===filter});
-}
+function matchFilter(d){if(filter==='all')return true;return entriesAtivas(d).some(function(e){return e.s===filter})}
 function setFilter(f){
  filter=(filter===f?'all':f);
  render();
@@ -678,91 +737,49 @@ function updateFilterUI(shown){
 
 /* ---------- Render ---------- */
 function render(){
- var _sy=0; try{_sy=window.scrollY||window.pageYOffset||document.documentElement.scrollTop||0;}catch(e){}
+ var _sy=0;try{_sy=window.scrollY||window.pageYOffset||document.documentElement.scrollTop||0}catch(e){}
  document.getElementById('weekLabel').value=state.week;
- var html='', shown=0;
- state.drivers.forEach(function(d){
-  if(!matchFilter(d)) return;
-  shown++;
-  html+='<div class="card" id="card-'+d.id+'">'
-   +'<div class="card-head">'
+ var html='',shown=0;
+ driversAtivos().forEach(function(d){
+  if(!matchFilter(d))return;shown++;
+  html+='<div class="card" id="card-'+d.id+'"><div class="card-head">'
    +'<div class="plate"><div class="bar"></div><input value="'+esc(d.plate)+'" placeholder="—" oninput="this.value=this.value.toUpperCase();fld(\''+d.id+'\',\'plate\',this.value)"></div>'
    +'<div class="who"><input class="nm" value="'+esc(d.name)+'" placeholder="Nome" oninput="fld(\''+d.id+'\',\'name\',this.value)">'
    +'<div class="carrow"><input class="car" value="'+esc(d.car)+'" placeholder="Carro/ano" oninput="fld(\''+d.id+'\',\'car\',this.value)">'
    +'<input class="cor" value="'+esc(d.color)+'" placeholder="Cor" oninput="fld(\''+d.id+'\',\'color\',this.value)"></div></div>'
-   +'<div class="subtot" id="sub-'+d.id+'"></div></div>'
-   +'<div class="entries">';
-  d.entries.forEach(function(e){
-   html+='<div class="entry">'
-    +'<input class="val'+(e.v<0?' neg':'')+'" inputmode="text" value="'+fmt(e.v)+'" '
-    +'onfocus="this.select()" onblur="valBlur(this,\''+d.id+'\',\''+e.id+'\')">'
+   +'<div class="subtot" id="sub-'+d.id+'"></div></div><div class="entries">';
+  entriesAtivas(d).forEach(function(e){
+   html+='<div class="entry"><input class="val'+(e.v<0?' neg':'')+'" inputmode="text" value="'+fmt(e.v)+'" onfocus="this.select()" oninput="valInput(this,\''+d.id+'\',\''+e.id+'\')" onblur="valBlur(this,\''+d.id+'\',\''+e.id+'\')">'
     +'<input class="desc" value="'+esc(e.d)+'" placeholder="descrição (opcional)" oninput="entD(\''+d.id+'\',\''+e.id+'\',this.value)">'
     +(e.s==='pend'&&e.v>0?'<button class="st part" onclick="openPartial(\''+d.id+'\',\''+e.id+'\')" title="Pagamento parcial">💰</button>':'')
-    +'<button class="st '+e.s+'" onclick="tgl(\''+d.id+'\',\''+e.id+'\')">'+(e.s==='paid'?'✅':'❌')+'</button>'
-    +'<button class="del" onclick="delEnt(\''+d.id+'\',\''+e.id+'\')">×</button></div>';
+    +'<button class="st '+e.s+'" onclick="tgl(\''+d.id+'\',\''+e.id+'\')">'+(e.s==='paid'?'✅':'❌')+'</button><button class="del" onclick="delEnt(\''+d.id+'\',\''+e.id+'\')">×</button></div>';
   });
-  d.notes.forEach(function(n){
-   html+='<div class="note"><input value="'+esc(n.t)+'" placeholder="observação" oninput="noteT(\''+d.id+'\',\''+n.id+'\',this.value)">'
-    +'<button class="del" onclick="delNote(\''+d.id+'\',\''+n.id+'\')">×</button></div>';
-  });
-  html+='</div><div class="card-actions">'
-   +'<button class="mini" onclick="addEnt(\''+d.id+'\')">+ Valor</button>'
-   +'<button class="mini" onclick="addNote(\''+d.id+'\')">+ Observação</button>'
-   +'<button class="mini danger" onclick="delDriver(\''+d.id+'\')">Remover</button>'
-   +'</div></div>';
+  notesAtivas(d).forEach(function(n){html+='<div class="note"><input value="'+esc(n.t)+'" placeholder="observação" oninput="noteT(\''+d.id+'\',\''+n.id+'\',this.value)"><button class="del" onclick="delNote(\''+d.id+'\',\''+n.id+'\')">×</button></div>'});
+  html+='</div><div class="card-actions"><button class="mini" onclick="addEnt(\''+d.id+'\')">+ Valor</button><button class="mini" onclick="addNote(\''+d.id+'\')">+ Observação</button><button class="mini danger" onclick="delDriver(\''+d.id+'\')">Remover</button></div></div>';
  });
- if(!html&&filter!=='all')
-  html='<div class="empty">'+(filter==='pend'?'Ninguém com pendência 🎉':'Ninguém pagou ainda')+'</div>';
- if(!html&&filter==='all'&&!state.drivers.length)
-  html='<div class="empty">Bem-vindo! Para carregar os motoristas:<br><b>☰ Menu → 📂 Importar backup</b><br>e escolha o arquivo dados-guimas.json<br><br>Ou toque em "+ Adicionar motorista" para começar do zero.</div>';
- document.getElementById('list').innerHTML=html;
- updateFilterUI(shown);
- updateTotals();
- updateLockUI();
- try{window.scrollTo(0,_sy);}catch(e){}
+ if(!html&&filter!=='all')html='<div class="empty">'+(filter==='pend'?'Ninguém com pendência 🎉':'Ninguém pagou ainda')+'</div>';
+ if(!html&&filter==='all'&&!driversAtivos().length)html='<div class="empty">Bem-vindo! Para carregar os motoristas:<br><b>☰ Menu → 📂 Importar backup</b><br>e escolha o arquivo dados-guimas.json<br><br>Ou toque em "+ Adicionar motorista" para começar do zero.</div>';
+ document.getElementById('list').innerHTML=html;updateFilterUI(shown);updateTotals();updateLockUI();try{window.scrollTo(0,_sy)}catch(e){}
 }
 
 /* ---------- Edição ---------- */
-function findD(id){for(var i=0;i<state.drivers.length;i++)if(state.drivers[i].id===id)return state.drivers[i]}
-function findE(d,id){for(var i=0;i<d.entries.length;i++)if(d.entries[i].id===id)return d.entries[i]}
-function fld(did,f,v){findD(did)[f]=v;save()}
-function entD(did,eid,v){findE(findD(did),eid).d=v;save()}
-function noteT(did,nid,v){var d=findD(did);d.notes.forEach(function(n){if(n.id===nid)n.t=v});save()}
-function valBlur(inp,did,eid){
- var e=findE(findD(did),eid); e.v=parseVal(inp.value);
- inp.value=fmt(e.v); inp.classList.toggle('neg',e.v<0);
- updateTotals(); save();
-}
-function tgl(did,eid){
- if(LOCK){toast('🔒 Travado — toque no cadeado para liberar');return;}
- var e=findE(findD(did),eid); e.s=(e.s==='paid'?'pend':'paid');
- save(); render();
-}
-function addEnt(did){findD(did).entries.push({id:uid(),v:0,d:'',s:'pend'});save();render()}
+function findD(id){for(var i=0;i<state.drivers.length;i++)if(state.drivers[i].id===id&&!state.drivers[i].del)return state.drivers[i]}
+function findE(d,id){if(!d)return null;for(var i=0;i<d.entries.length;i++)if(d.entries[i].id===id&&!d.entries[i].del)return d.entries[i]}
+function fld(did,f,v){var d=findD(did);if(!d)return;d[f]=v;_mark(d);save()}
+function entD(did,eid,v){var e=findE(findD(did),eid);if(!e)return;e.d=v;_mark(e);save()}
+function noteT(did,nid,v){var d=findD(did);if(!d)return;var n=notesAtivas(d).filter(function(x){return x.id===nid})[0];if(!n)return;n.t=v;_mark(n);save()}
+function valInput(inp,did,eid){var e=findE(findD(did),eid);if(!e)return;e.v=parseVal(inp.value);_mark(e);touch();persist();updateTotals()}
+function valBlur(inp,did,eid){var e=findE(findD(did),eid);if(!e)return;e.v=parseVal(inp.value);_mark(e);inp.value=fmt(e.v);inp.classList.toggle('neg',e.v<0);updateTotals();save()}
+function tgl(did,eid){if(LOCK){toast('🔒 Travado — toque no cadeado para liberar');return}var e=findE(findD(did),eid);if(!e)return;e.s=(e.s==='paid'?'pend':'paid');_mark(e);save();render()}
+function addEnt(did){var d=findD(did);if(!d)return;var e={id:uid(),v:0,d:'',s:'pend',at:_ag(),by:DEV,del:false};d.entries.push(e);_mark(d);save();render()}
 function delEnt(did,eid){
- var d=findD(did), e=findE(d,eid);
- ask('Excluir lançamento','Excluir o lançamento de '+fmt(e.v)+(e.d?' ('+e.d+')':'')+' de '+(d.name||'este motorista')+'?','Excluir',function(){
-  d.entries=d.entries.filter(function(x){return x.id!==eid});
-  save();render();toast('Lançamento excluído');
- });
+ var d=findD(did),e=findE(d,eid);if(!d||!e)return;
+ ask('Excluir lançamento','Excluir o lançamento de '+fmt(e.v)+(e.d?' ('+e.d+')':'')+' de '+(d.name||'este motorista')+'?','Excluir',function(){e.del=true;_mark(e);_mark(d);save();render();toast('Lançamento excluído')});
 }
-function addNote(did){findD(did).notes.push({id:uid(),t:''});save();render()}
-function delNote(did,nid){
- var d=findD(did);
- d.notes=d.notes.filter(function(n){return n.id!==nid});
- save();render();toast('Observação excluída');
-}
-function addDriver(){
- state.drivers.push({id:uid(),name:'',car:'',color:'',plate:'',entries:[{id:uid(),v:0,d:'',s:'pend'}],notes:[]});
- save();render();window.scrollTo(0,document.body.scrollHeight);
-}
-function delDriver(did){
- var d=findD(did);
- ask('Remover motorista','Remover '+(d.name||'este motorista')+(d.plate?' ('+d.plate+')':'')+' e todos os lançamentos dele desta semana?','Remover',function(){
-  state.drivers=state.drivers.filter(function(x){return x.id!==did});
-  save();render();toast('Motorista removido');
- });
-}
+function addNote(did){var d=findD(did);if(!d)return;d.notes.push({id:uid(),t:'',at:_ag(),by:DEV,del:false});_mark(d);save();render()}
+function delNote(did,nid){var d=findD(did);if(!d)return;var n=notesAtivas(d).filter(function(x){return x.id===nid})[0];if(!n)return;n.del=true;_mark(n);_mark(d);save();render();toast('Observação excluída')}
+function addDriver(){var n=_ag();state.drivers.push({id:uid(),name:'',car:'',color:'',plate:'',entries:[{id:uid(),v:0,d:'',s:'pend',at:n,by:DEV,del:false}],notes:[],at:n,by:DEV,del:false});save();render();window.scrollTo(0,document.body.scrollHeight)}
+function delDriver(did){var d=findD(did);if(!d)return;ask('Remover motorista','Remover '+(d.name||'este motorista')+(d.plate?' ('+d.plate+')':'')+' e todos os lançamentos dele desta semana?','Remover',function(){d.del=true;_mark(d);entriesAtivas(d).forEach(function(e){e.del=true;_mark(e)});notesAtivas(d).forEach(function(n){n.del=true;_mark(n)});save();render();toast('Motorista removido')})}
 
 /* ---------- Pagamento parcial ---------- */
 var PART={did:null,eid:null};
@@ -784,39 +801,15 @@ function pPreview(){
  el.innerHTML='<span class="ok">✅ Pago agora: '+fmt(pago)+'</span> &nbsp;·&nbsp; <span class="falta">❌ Falta: '+fmt(e.v-pago)+'</span>';
 }
 function confirmPartial(){
- var d=findD(PART.did), e=findE(d,PART.eid); if(!e)return;
- var pago=parseVal(document.getElementById('pVal').value);
- if(pago<=0){toast('⚠️ Digite o valor pago');return}
- if(pago>=e.v){
-  e.s='paid';
-  document.getElementById('ovPartial').classList.remove('open');
-  save(); render(); toast('Lançamento quitado por inteiro ✅'); return;
- }
- var idx=d.entries.indexOf(e);
- var restante=e.v-pago;
- e.v=restante; // o ❌ continua no lugar, com o que falta
- d.entries.splice(idx+1,0,{id:uid(),v:pago,d:(e.d?e.d+' — ':'')+'parcial',s:'paid'});
- document.getElementById('ovPartial').classList.remove('open');
- save(); render();
- toast('✅ '+fmt(pago)+' pago · ❌ falta '+fmt(restante));
+ var d=findD(PART.did),e=findE(d,PART.eid);if(!d||!e)return;var pago=parseVal(document.getElementById('pVal').value);if(pago<=0){toast('⚠️ Digite o valor pago');return}
+ if(pago>=e.v){e.s='paid';_mark(e);document.getElementById('ovPartial').classList.remove('open');save();render();toast('Lançamento quitado por inteiro ✅');return}
+ var idx=d.entries.indexOf(e),restante=e.v-pago;e.v=restante;_mark(e);d.entries.splice(idx+1,0,{id:uid(),v:pago,d:(e.d?e.d+' — ':'')+'parcial',s:'paid',at:_ag(),by:DEV,del:false});_mark(d);
+ document.getElementById('ovPartial').classList.remove('open');save();render();toast('✅ '+fmt(pago)+' pago · ❌ falta '+fmt(restante));
 }
 
 /* ---------- Texto WhatsApp ---------- */
 function buildText(drivers,week){
- var blocks=[];
- drivers.forEach(function(d){
-  var head=[d.name,d.car,d.color,d.plate].filter(function(x){return x&&x.trim()}).join(' | ');
-  if(!head)return;
-  var lines=['*'+head+'*'];
-  d.entries.forEach(function(e){
-   lines.push(fmt(e.v)+(e.d&&e.d.trim()?' '+e.d.trim():'')+' '+(e.s==='paid'?'✅':'❌'));
-  });
-  d.notes.forEach(function(n){ if(n.t&&n.t.trim()) lines.push(n.t.trim()); });
-  blocks.push(lines.join('\n'));
- });
- var t=totals(drivers);
- return '*SEMANAL - '+week+'*\n\n\n'+blocks.join('\n\n\n')
-  +'\n\n\n*TOTAL SEMANAL - '+fmt(t.all)+'*';
+ var blocks=[];_active(drivers).forEach(function(d){var head=[d.name,d.car,d.color,d.plate].filter(function(x){return x&&x.trim()}).join(' | ');if(!head)return;var lines=['*'+head+'*'];entriesAtivas(d).forEach(function(e){lines.push(fmt(e.v)+(e.d&&e.d.trim()?' '+e.d.trim():'')+' '+(e.s==='paid'?'✅':'❌'))});notesAtivas(d).forEach(function(n){if(n.t&&n.t.trim())lines.push(n.t.trim())});blocks.push(lines.join('\n'))});var tt=totals(drivers);return '*SEMANAL - '+week+'*\n\n\n'+blocks.join('\n\n\n')+'\n\n\n*TOTAL SEMANAL - '+fmt(tt.all)+'*';
 }
 function openWhats(){
  document.getElementById('whatsText').textContent=buildText(state.drivers,state.week);
@@ -844,54 +837,28 @@ function legacyCopy(txt){
 }
 
 /* ---------- Fechar semana ---------- */
+function _proxSemanaLabel(week,ref){
+ ref=ref||new Date();var p=String(week||'').split('/'),d=parseInt(p[0],10),m=parseInt(p[1],10);if(isNaN(d)||isNaN(m)){
+  var x=new Date(ref.getFullYear(),ref.getMonth(),ref.getDate()),dif=(3-x.getDay()+7)%7;if(dif===0)dif=7;x.setDate(x.getDate()+dif);return ('0'+x.getDate()).slice(-2)+'/'+('0'+(x.getMonth()+1)).slice(-2)
+ }
+ var y=ref.getFullYear(),base=new Date(y,m-1,d);if(base-ref>120*86400000)base=new Date(y-1,m-1,d);else if(ref-base>300*86400000)base=new Date(y+1,m-1,d);base.setDate(base.getDate()+7);return ('0'+base.getDate()).slice(-2)+'/'+('0'+(base.getMonth()+1)).slice(-2)
+}
 function closeWeek(){
- var t=totals(state.drivers);
- ask('Fechar semana '+state.week,
-  'Recebido: '+fmt(t.paid)+' → fecha no histórico como o valor da semana.\nPendente: '+fmt(t.pend)+' → os lançamentos ❌ vão automaticamente para a semana nova.\n\nOs motoristas continuam na lista.',
-  'Fechar semana',
-  function(){
-   var now=new Date();
-   var stamp=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear();
-   state.history.unshift({
-    id:uid(), week:state.week, closedAt:stamp,
-    paid:t.paid, pend:t.pend, all:t.paid, carried:t.pend,
-    text:buildText(state.drivers,state.week),
-    drivers:JSON.parse(JSON.stringify(state.drivers))
-   });
-   state.drivers.forEach(function(d){
-    d.entries=d.entries.filter(function(e){return e.s==='pend'});
-    d.notes=[];
-   });
-   state.week=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2);
-   filter='all';
-   touch(); persist(); schedulePush(); render();
-   toast('Semana fechada ✓ Pendências levadas para a semana nova');
- });
+ var ativos=driversAtivos(),tt=totals(ativos);ask('Fechar semana '+state.week,'Recebido: '+fmt(tt.paid)+' → fecha no histórico como o valor da semana.\nPendente: '+fmt(tt.pend)+' → os lançamentos ❌ vão automaticamente para a semana nova.\n\nOs motoristas continuam na lista.','Fechar semana',function(){
+  var now=new Date(),ts=_ag(),stamp=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear(),snap=JSON.parse(JSON.stringify(ativos));
+  var h={id:uid(),periodKey:_periodKey(state.week,stamp),week:state.week,closedAt:stamp,paid:tt.paid,pend:tt.pend,all:tt.paid,carried:tt.pend,text:buildText(snap,state.week),drivers:snap,at:ts,by:DEV,del:false};state.history.unshift(h);
+  ativos.forEach(function(d){entriesAtivas(d).forEach(function(e){if(e.s==='paid'){e.del=true;e.at=ts;e.by=DEV}});notesAtivas(d).forEach(function(n){n.del=true;n.at=ts;n.by=DEV});_mark(d)});
+  state.week=_proxSemanaLabel(state.week,now);state.weekAt=ts;filter='all';touch();persist();schedulePush();render();toast('Semana fechada ✓ Pendências levadas para a semana nova');
+ })
 }
 
 /* ---------- Histórico ---------- */
 function openHistory(){
- var el=document.getElementById('histList'), h=state.history;
- if(!h.length){el.innerHTML='<div class="empty">Nenhuma semana fechada ainda.<br>Use "Fechar semana" no menu ao fim de cada semana.</div>'}
- else{
-  el.innerHTML=h.map(function(w){
-   return '<div class="histItem" id="h-'+w.id+'">'
-    +'<div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div>'
-    +'<div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+(w.carried!==undefined?' · Levado p/ semana seguinte '+fmt(w.carried):' · Pendente '+fmt(w.pend))+'</div></div>'
-    +'<div class="tt">'+fmt(w.all)+'</div></div>'
-    +'<div class="acts">'
-    +'<button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button>'
-    +'<button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button>'
-    +'<button class="mini" onclick="openHistEdit(\''+w.id+'\')">✏️ Editar</button>'
-    +'<button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div>'
-    +'<pre>'+esc(w.text)+'</pre></div>';
-  }).join('');
- }
- document.getElementById('ovHist').classList.add('open');
+ var el=document.getElementById('histList'),h=histAtivo().slice().sort(function(a,b){return (Number(b.at)||0)-(Number(a.at)||0)});if(!h.length){el.innerHTML='<div class="empty">Nenhuma semana fechada ainda.<br>Use "Fechar semana" no menu ao fim de cada semana.</div>'}else{el.innerHTML=h.map(function(w){return '<div class="histItem" id="h-'+w.id+'"><div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div><div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+(w.carried!==undefined?' · Levado p/ semana seguinte '+fmt(w.carried):' · Pendente '+fmt(w.pend))+'</div></div><div class="tt">'+fmt(w.all)+'</div></div><div class="acts"><button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button><button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button><button class="mini" onclick="openHistEdit(\''+w.id+'\')">✏️ Editar</button><button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div><pre>'+esc(w.text)+'</pre></div>'}).join('')}document.getElementById('ovHist').classList.add('open');
 }
 var EH_ID=null;
 function openHistEdit(id){
- var w=state.history.filter(function(x){return x.id===id})[0]; if(!w)return;
+ var w=histAtivo().filter(function(x){return x.id===id})[0]; if(!w)return;
  EH_ID=id;
  document.getElementById('ehInfo').textContent='Semana de '+fmt(w.all)+' — corrigir as datas não altera nenhum valor.';
  document.getElementById('ehWeek').value=w.week||'';
@@ -899,12 +866,12 @@ function openHistEdit(id){
  document.getElementById('ovEditHist').classList.add('open');
 }
 function saveHistEdit(){
- var w=state.history.filter(function(x){return x.id===EH_ID})[0]; if(!w)return;
+ var w=histAtivo().filter(function(x){return x.id===EH_ID})[0]; if(!w)return;
  var nw=(document.getElementById('ehWeek').value||'').trim();
  var nc=(document.getElementById('ehClosed').value||'').trim();
  if(!nw){toast('⚠️ Informe a data da semana');return}
  var old=w.week;
- w.week=nw; w.closedAt=nc;
+ w.week=nw; w.closedAt=nc; w.periodKey=_periodKey(nw,nc); _mark(w);
  // o texto salvo (usado no Copiar) acompanha a correção
  if(typeof w.text==='string'&&w.text){
   w.text=w.text.replace('*SEMANAL - '+old+'*','*SEMANAL - '+nw+'*');
@@ -915,53 +882,20 @@ function saveHistEdit(){
  toast('Semana corrigida ✓');
 }
 function copyHist(id){
- var w=state.history.filter(function(x){return x.id===id})[0]; if(!w)return;
+ var w=histAtivo().filter(function(x){return x.id===id})[0]; if(!w)return;
  doCopy(w.text,function(){toast('Semana '+w.week+' copiada')});
 }
-function delHist(id){
- var w=state.history.filter(function(x){return x.id===id})[0]; if(!w)return;
- ask('Excluir do histórico','Excluir a semana '+w.week+' ('+fmt(w.all)+') do histórico? Isso não pode ser desfeito.','Excluir',function(){
-  state.history=state.history.filter(function(x){return x.id!==id});
-  touch(); persist(); schedulePush(); openHistory(); toast('Semana excluída do histórico');
- });
-}
+function delHist(id){var w=histAtivo().filter(function(x){return x.id===id})[0];if(!w)return;ask('Excluir do histórico','Excluir a semana '+w.week+' ('+fmt(w.all)+') do histórico? Isso não pode ser desfeito.','Excluir',function(){w.del=true;_mark(w);touch();persist();schedulePush();openHistory();toast('Semana excluída do histórico')})}
 
 /* ---------- Backup ---------- */
-function exportBackup(){
- var now=new Date();
- var name='backup-semanal-'+now.getFullYear()+('0'+(now.getMonth()+1)).slice(-2)+('0'+now.getDate()).slice(-2)+'.json';
- var json=JSON.stringify(state,null,1);
- var blob=new Blob([json],{type:'application/json'});
- var file; try{file=new File([blob],name,{type:'application/json'})}catch(e){}
- if(file&&navigator.canShare&&navigator.canShare({files:[file]})){
-  navigator.share({files:[file]}).catch(function(){downloadBlob(blob,name)});
- }else downloadBlob(blob,name);
-}
+function exportBackup(){var now=new Date(),name='backup-semanal-'+now.getFullYear()+('0'+(now.getMonth()+1)).slice(-2)+('0'+now.getDate()).slice(-2)+'.json';var limpo=norm(state);limpo.drivers=driversAtivos().map(function(d){var c=JSON.parse(JSON.stringify(d));c.entries=entriesAtivas(c);c.notes=notesAtivas(c);return c});limpo.history=histAtivo();var json=JSON.stringify(limpo,null,1),blob=new Blob([json],{type:'application/json'}),file;try{file=new File([blob],name,{type:'application/json'})}catch(e){}if(file&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file]}).catch(function(){downloadBlob(blob,name)})}else downloadBlob(blob,name)}
 function downloadBlob(blob,name){
  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
  document.body.appendChild(a);a.click();
  setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);
 }
 function importBackup(inp){
- var f=inp.files&&inp.files[0]; inp.value=''; if(!f)return;
- var r=new FileReader();
- r.onload=function(){
-  try{
-   var data=JSON.parse(r.result);
-   if(!data||!Array.isArray(data.drivers)) throw new Error('formato');
-   ask('Importar backup',
-    'Os dados atuais serão substituídos pelos do arquivo ('+data.drivers.length+' motoristas, '+((data.history||[]).length)+' semanas no histórico).',
-    'Importar',
-    function(){
-     state=norm({week:data.week,drivers:data.drivers,history:data.history});
-     filter='all';
-     touch(); persist(); schedulePush(); render();
-     document.getElementById('ovMenu').classList.remove('open');
-     toast('Backup importado ✓');
-   });
-  }catch(e){ toast('⚠️ Arquivo inválido'); }
- };
- r.readAsText(f);
+ var f=inp.files&&inp.files[0];inp.value='';if(!f)return;var r=new FileReader();r.onload=function(){try{var data=JSON.parse(r.result);if(!data||!Array.isArray(data.drivers))throw new Error('formato');ask('Importar backup','Os dados atuais serão substituídos pelos do arquivo ('+data.drivers.length+' motoristas, '+((data.history||[]).length)+' semanas no histórico).','Importar',function(){var ts=_ag(),novo=norm({week:data.week,weekAt:ts,drivers:data.drivers,history:data.history,resetAt:ts});novo.drivers.forEach(function(d){d.at=ts;d.by=DEV;d.del=false;entriesAtivas(d).forEach(function(e){e.at=ts;e.by=DEV;e.del=false});notesAtivas(d).forEach(function(n){n.at=ts;n.by=DEV;n.del=false})});novo.history.forEach(function(w){w.periodKey=w.periodKey||_periodKey(w.week,w.closedAt);w.at=ts;w.by=DEV;w.del=false});state=novo;filter='all';touch();persist();schedulePush();render();document.getElementById('ovMenu').classList.remove('open');toast('Backup importado ✓')})}catch(e){toast('⚠️ Arquivo inválido')}};r.readAsText(f)
 }
 
 /* ---------- Diversos ---------- */
@@ -970,11 +904,11 @@ function toast(msg){
  var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
  setTimeout(function(){t.classList.remove('show')},2200);
 }
-document.getElementById('weekLabel').addEventListener('input',function(){state.week=this.value;save()});
+document.getElementById('weekLabel').addEventListener('input',function(){state.week=this.value;state.weekAt=_ag();save()});
 
 /* ================= SINCRONIZAÇÃO (Firebase Realtime Database) ================= */
 var DEV=(function(){try{var d=localStorage.getItem('guimas_dev');if(!d){d=uid()+uid();localStorage.setItem('guimas_dev',d)}return d}catch(e){return uid()}})();
-var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false};
+var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false,gotRemote:false};
 
 function touch(){state.rev=Date.now();state.dev=DEV;}
 function toArr(x){
@@ -983,18 +917,12 @@ function toArr(x){
  return [];
 }
 function norm(s){
- if(!s||typeof s!=='object') s={};
- var o={week:(typeof s.week==='string'?s.week:''),rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
- toArr(s.drivers).forEach(function(d){ if(!d) return;
-  o.drivers.push({id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',
-   entries:toArr(d.entries).filter(Boolean).map(function(e){return {id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend')}}),
-   notes:toArr(d.notes).filter(Boolean).map(function(n){return {id:n.id||uid(),t:n.t||''}})});
+ if(!s||typeof s!=='object')s={};var o={week:(typeof s.week==='string'?s.week:''),weekAt:Number(s.weekAt)||0,resetAt:Number(s.resetAt)||0,rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
+ toArr(s.drivers).forEach(function(d){if(!d)return;var dd={id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',at:Number(d.at)||0,by:d.by||'',del:!!d.del,entries:[],notes:[]};
+  toArr(d.entries).forEach(function(e){if(e)dd.entries.push({id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),at:Number(e.at)||0,by:e.by||'',del:!!e.del})});
+  toArr(d.notes).forEach(function(n){if(n)dd.notes.push({id:n.id||uid(),t:n.t||'',at:Number(n.at)||0,by:n.by||'',del:!!n.del})});o.drivers.push(dd)
  });
- toArr(s.history).forEach(function(w){ if(!w) return;
-  o.history.push({id:w.id||uid(),week:w.week||'',closedAt:w.closedAt||'',paid:w.paid||0,pend:w.pend||0,all:w.all||0,carried:(typeof w.carried==='number'?w.carried:undefined),
-   text:w.text||'',drivers:toArr(w.drivers)});
- });
- return o;
+ toArr(s.history).forEach(function(w){if(!w)return;var hh={id:w.id||uid(),periodKey:w.periodKey||_periodKey(w.week,w.closedAt),week:w.week||'',closedAt:w.closedAt||'',paid:w.paid||0,pend:w.pend||0,all:w.all||0,carried:(typeof w.carried==='number'?w.carried:undefined),text:w.text||'',drivers:toArr(w.drivers),at:Number(w.at)||0,by:w.by||'',del:!!w.del};o.history.push(hh)});return o;
 }
 function syncCfg(){try{return JSON.parse(localStorage.getItem('guimas_sync')||'null')}catch(e){return null}}
 
@@ -1029,7 +957,7 @@ function startSync(){
   return famHash(cfg.key);
  }).then(function(h){
   SYNC.ref=firebase.database().ref('familias/'+h+'/estado');
-  SYNC.ref.on('value',function(snap){var v=snap.val();
+  SYNC.ref.on('value',function(snap){var v=snap.val();SYNC.gotRemote=true;
    if(!v){push();return}
    onRemote(v);
   },function(err){
@@ -1049,9 +977,8 @@ function startSync(){
  });
 }
 function push(){
- if(!SYNC.ref){SYNC.pendingPush=true;return}
- SYNC.pendingPush=false;
- SYNC.ref.set(state).catch(function(){SYNC.pendingPush=true;});
+ if(!SYNC.ref||!SYNC.gotRemote){SYNC.pendingPush=true;return}SYNC.pendingPush=false;var local=norm(state);
+ SYNC.ref.transaction(function(cur){var junto=cur?_mergeState(cur,local):local;junto.rev=Math.max(_ag(),Number(local.rev)||0,Number(cur&&cur.rev)||0);junto.dev=DEV;return junto},function(err,committed,snap){if(err||!committed){SYNC.pendingPush=true;return}if(snap&&snap.val()){var remoto=norm(snap.val()),atual=norm(state),junto=_mergeState(remoto,atual),precisa=JSON.stringify(junto)!==JSON.stringify(remoto);state=junto;persist();if(!inputFocused())render();if(precisa){touch();persist();schedulePush()}}},false);
 }
 function schedulePush(){
  clearTimeout(SYNC.pushTimer);
@@ -1062,18 +989,16 @@ function inputFocused(){
  return !!(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'));
 }
 function onRemote(v){
- if(!v.rev||v.dev===DEV){ if((v.rev||0)<(state.rev||0)) schedulePush(); return }
- if(v.rev<=(state.rev||0)){ if(v.rev<(state.rev||0)) schedulePush(); return }
- if(inputFocused()){SYNC.pendingRemote=v;return}
- adopt(v);
+ if(!v)return;SYNC.gotRemote=true;var rem=norm(v);if(inputFocused()){SYNC.pendingRemote=SYNC.pendingRemote?_mergeState(SYNC.pendingRemote,rem):rem;return}adopt(rem);
 }
 function adopt(v){
- state=norm(v); SYNC.pendingRemote=null;
- try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}
- filter='all'; render();
- toast('🔄 Atualizado pelo outro aparelho');
+ var rem=norm(v),junto=_mergeState(rem,state),precisa=JSON.stringify(junto)!==JSON.stringify(rem);state=junto;SYNC.pendingRemote=null;persist();filter='all';render();if(precisa){touch();persist();schedulePush()}toast('🔄 Sincronização conferida');
 }
 setInterval(function(){ if(SYNC.pendingRemote&&!inputFocused()) adopt(SYNC.pendingRemote); },1500);
+try{
+ window.addEventListener('pagehide',function(){try{persist()}catch(e){};if(SYNC.ref&&SYNC.gotRemote){try{clearTimeout(SYNC.pushTimer);push()}catch(e){}}});
+ document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'){try{persist()}catch(e){};if(SYNC.ref&&SYNC.gotRemote){try{clearTimeout(SYNC.pushTimer);push()}catch(e){}}}});
+}catch(e){}
 
 function openSync(){
  var cfg=syncCfg();
