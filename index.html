@@ -505,7 +505,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=23; var APP_DATE='24/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=24; var APP_DATE='25/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -603,10 +603,14 @@ function _newer(a,b){
  return JSON.stringify(b)>JSON.stringify(a)?b:a;
 }
 function _active(a){return toArr(a).filter(function(x){return x&&!x.del})}
-function _periodKey(week,closedAt){
- var p=String(closedAt||'').split('/'),ano=p[2]||String(new Date().getFullYear());
- return 'wk:'+ano+':'+String(week||'').trim();
-}
+function _weekYear(week,closedAt){var wp=String(week||'').split('/'),d=parseInt(wp[0],10),m=parseInt(wp[1],10),cp=String(closedAt||'').split('/'),baseY=parseInt(cp[2],10)||new Date().getFullYear(),ref=(cp.length>=3?new Date(baseY,(parseInt(cp[1],10)||1)-1,parseInt(cp[0],10)||1):new Date()),best=baseY,dist=Infinity;[baseY-1,baseY,baseY+1].forEach(function(y){var x=new Date(y,(m||1)-1,d||1),dd=Math.abs(x.getTime()-ref.getTime());if(dd<dist){dist=dd;best=y}});return best}
+function _periodKey(week,closedAt){return 'wk:'+_weekYear(week,closedAt)+':'+String(week||'').trim()}
+function _fieldMeta(d,k){var mm=d&&d.fm&&typeof d.fm==='object'?d.fm:null,fm=mm&&(mm[k]||mm._legacy);return fm?{at:Number(fm.at)||0,by:String(fm.by||'')}:{at:Number(d&&d.at)||0,by:String(d&&d.by||'')}}
+function _pickRootField(a,b,k){var ma=_fieldMeta(a,k),mb=_fieldMeta(b,k);if(ma.at!==mb.at)return mb.at>ma.at?{v:b[k],m:mb}:{v:a[k],m:ma};if(ma.by!==mb.by)return mb.by>ma.by?{v:b[k],m:mb}:{v:a[k],m:ma};return JSON.stringify(b[k])>JSON.stringify(a[k])?{v:b[k],m:mb}:{v:a[k],m:ma}}
+function _markField(d,k){if(!d)return;var old={at:Number(d.at)||0,by:String(d.by||'')},n=_ag();d.fm=d.fm&&typeof d.fm==='object'?d.fm:{};if(!d.fm._legacy)d.fm._legacy=old;d.fm[k]={at:n,by:DEV};d.at=n;d.by=DEV}
+function _latestChildAt(d){var x=0;toArr(d&&d.entries).concat(toArr(d&&d.notes)).forEach(function(z){if(z&&!z.del)x=Math.max(x,Number(z.at)||0)});return x}
+function _mergeDriverRoot(a,b){var base=_newer(a,b),out={};for(var k in base)if(Object.prototype.hasOwnProperty.call(base,k)&&k!=='entries'&&k!=='notes')out[k]=base[k];out.fm={};['name','car','color','plate'].forEach(function(k){var p=_pickRootField(a,b,k);out[k]=p.v;out.fm[k]=p.m});out.at=Math.max(Number(a.at)||0,Number(b.at)||0);out.by=(Number(b.at)||0)>(Number(a.at)||0)?b.by:a.by;return out}
+
 function _weekOrdem(week,at){
  var p=String(week||'').trim().split('/'),d=parseInt(p[0],10),m=parseInt(p[1],10);if(isNaN(d)||isNaN(m)||m<1||m>12||d<1||d>31)return 0;
  var ref=at?new Date(Number(at)):new Date();if(isNaN(ref.getTime()))ref=new Date();var y=ref.getFullYear(),dt=new Date(y,m-1,d),dif=dt.getTime()-ref.getTime(),lim=183*86400000;
@@ -621,10 +625,9 @@ function _mergeById(A,B,merger,keyFn){
  return Object.keys(m).sort().map(function(k){return m[k]});
 }
 function _mergeDriver(a,b){
- if(!a)return b;if(!b)return a;if(a.del||b.del)return _newer(a,b);
- var base=_newer(a,b),out={};for(var k in base)if(Object.prototype.hasOwnProperty.call(base,k))out[k]=base[k];
- out.entries=_mergeById(a.entries,b.entries,_mergeEntry);out.notes=_mergeById(a.notes,b.notes,_mergeNote);
- return out;
+ if(!a)return b;if(!b)return a;
+ if(a.del||b.del){var tomb=a.del?a:b,live=a.del?b:a,novo=_latestChildAt(live);if(!(novo>Number(tomb.at)||0))return _newer(a,b);var rr=_mergeDriverRoot(live,tomb);rr.del=false;rr.entries=_mergeById(a.entries,b.entries,_mergeEntry);rr.notes=_mergeById(a.notes,b.notes,_mergeNote);rr.at=Math.max(Number(rr.at)||0,novo);return rr}
+ var out=_mergeDriverRoot(a,b);out.del=false;out.entries=_mergeById(a.entries,b.entries,_mergeEntry);out.notes=_mergeById(a.notes,b.notes,_mergeNote);return out;
 }
 function _histRecalc(w){
  if(!w||w.del)return w;var ds=_active(w.drivers).map(function(d){var c=JSON.parse(JSON.stringify(d));c.entries=_active(c.entries);c.notes=_active(c.notes);return c});
@@ -644,16 +647,23 @@ function _mergeHistoryList(A,B){
 }
 function _mergeState(a,b){
  a=norm(a||{});b=norm(b||{});var reset=Math.max(Number(a.resetAt)||0,Number(b.resetAt)||0);
- /* Importação substitutiva abre um novo epoch. Objetos antigos são cortados antes do
-    merge, mas uma edição realmente feita depois do reset continua podendo entrar. */
  function clip(s){if(!reset)return s;var ds=[];toArr(s.drivers).forEach(function(d){if(!d)return;var c=JSON.parse(JSON.stringify(d));c.entries=toArr(c.entries).filter(function(e){return (Number(e&&e.at)||0)>=reset});c.notes=toArr(c.notes).filter(function(n){return (Number(n&&n.at)||0)>=reset});var raiz=(Number(c.at)||0)>=reset;if(raiz||c.entries.length||c.notes.length)ds.push(c)});s.drivers=ds;s.history=toArr(s.history).filter(function(w){return (Number(w&&w.at)||0)>=reset});return s}
- a=clip(a);b=clip(b);var out={},aw=Number(a.weekAt)||0,bw=Number(b.weekAt)||0,ao=_weekOrdem(a.week,aw),bo=_weekOrdem(b.week,bw);
- /* A semana corrente nunca regride: calendário primeiro; carimbo/device só desempata a mesma semana. */
- if(bo>ao||(bo===ao&&(bw>aw||(bw===aw&&String(b.dev||'')>String(a.dev||''))))){out.week=b.week;out.weekAt=bw}else{out.week=a.week;out.weekAt=aw}
- out.drivers=_mergeById(a.drivers,b.drivers,_mergeDriver);out.history=_mergeHistoryList(a.history,b.history);out.resetAt=reset;
- if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
+ a=clip(a);b=clip(b);var out={},aw=Number(a.weekAt)||0,bw=Number(b.weekAt)||0,ao=_weekOrdem(a.week,aw),bo=_weekOrdem(b.week,bw),win,lose;
+ if(bo>ao||(bo===ao&&(bw>aw||(bw===aw&&String(b.dev||'')>String(a.dev||''))))){win=b;lose=a}else{win=a;lose=b}out.week=win.week;out.weekAt=Number(win.weekAt)||0;
+ out.history=_mergeHistoryList(a.history,b.history);
+ if(a.week===b.week){out.drivers=_mergeById(a.drivers,b.drivers,_mergeDriver)}else{
+  /* Estado atrasado pertence à semana antiga. Entradas novas feitas nele depois do
+     fechamento são incorporadas ao histórico daquela semana, não jogadas na semana nova. */
+  out.drivers=toArr(win.drivers).map(function(x){return JSON.parse(JSON.stringify(x))});var h=null;toArr(out.history).forEach(function(w){if(!w||w.del||w.week!==lose.week)return;if(!h||(Number(w.at)||0)>(Number(h.at)||0))h=w});
+  if(h){h.drivers=_mergeById(h.drivers,lose.drivers,_mergeDriver);_histRecalc(h);var hm=0;toArr(lose.drivers).forEach(function(d){hm=Math.max(hm,Number(d&&d.at)||0,_latestChildAt(d))});if(hm>Number(h.at)||0)h.at=hm;
+    /* alterações cadastrais de nome/carro/cor/placa continuam chegando à ficha atual */
+    var by={};toArr(out.drivers).forEach(function(d){by[d.id]=d});toArr(lose.drivers).forEach(function(d){if(by[d.id]){var root=_mergeDriverRoot(by[d.id],d);['name','car','color','plate','fm','at','by'].forEach(function(k){by[d.id][k]=root[k]})}})
+  }else out.drivers=_mergeById(win.drivers,lose.drivers,_mergeDriver)
+ }
+ out.resetAt=reset;if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
  out.rev=Math.max(Number(a.rev)||0,Number(b.rev)||0);out.dev=(Number(b.rev)||0)>(Number(a.rev)||0)?b.dev:((Number(b.rev)||0)<(Number(a.rev)||0)?a.dev:(String(b.dev||'')>String(a.dev||'')?b.dev:a.dev));return norm(out);
 }
+
 function driversAtivos(){return _active(state.drivers)}
 function entriesAtivas(d){return _active(d&&d.entries)}
 function notesAtivas(d){return _active(d&&d.notes)}
@@ -772,7 +782,7 @@ function render(){
 /* ---------- Edição ---------- */
 function findD(id){for(var i=0;i<state.drivers.length;i++)if(state.drivers[i].id===id&&!state.drivers[i].del)return state.drivers[i]}
 function findE(d,id){if(!d)return null;for(var i=0;i<d.entries.length;i++)if(d.entries[i].id===id&&!d.entries[i].del)return d.entries[i]}
-function fld(did,f,v){var d=findD(did);if(!d)return;d[f]=v;_mark(d);save()}
+function fld(did,f,v){var d=findD(did);if(!d)return;d[f]=v;_markField(d,f);save()}
 function entD(did,eid,v){var e=findE(findD(did),eid);if(!e)return;e.d=v;_mark(e);save()}
 function noteT(did,nid,v){var d=findD(did);if(!d)return;var n=notesAtivas(d).filter(function(x){return x.id===nid})[0];if(!n)return;n.t=v;_mark(n);save()}
 function valInput(inp,did,eid){var e=findE(findD(did),eid);if(!e)return;e.v=parseVal(inp.value);_mark(e);touch();persist(true);updateTotals()}
@@ -785,7 +795,7 @@ function delEnt(did,eid){
 }
 function addNote(did){var d=findD(did);if(!d)return;d.notes.push({id:uid(),t:'',at:_ag(),by:DEV,del:false});_mark(d);save();render()}
 function delNote(did,nid){var d=findD(did);if(!d)return;var n=notesAtivas(d).filter(function(x){return x.id===nid})[0];if(!n)return;n.del=true;_mark(n);_mark(d);save();render();toast('Observação excluída')}
-function addDriver(){var n=_ag();state.drivers.push({id:uid(),name:'',car:'',color:'',plate:'',entries:[{id:uid(),v:0,d:'',s:'pend',at:n,by:DEV,del:false}],notes:[],at:n,by:DEV,del:false});save();render();window.scrollTo(0,document.body.scrollHeight)}
+function addDriver(){var n=_ag();state.drivers.push({id:uid(),name:'',car:'',color:'',plate:'',fm:{name:{at:n,by:DEV},car:{at:n,by:DEV},color:{at:n,by:DEV},plate:{at:n,by:DEV}},entries:[{id:uid(),v:0,d:'',s:'pend',at:n,by:DEV,del:false}],notes:[],at:n,by:DEV,del:false});save();render();window.scrollTo(0,document.body.scrollHeight)}
 function delDriver(did){var d=findD(did);if(!d)return;ask('Remover motorista','Remover '+(d.name||'este motorista')+(d.plate?' ('+d.plate+')':'')+' e todos os lançamentos dele desta semana?','Remover',function(){d.del=true;_mark(d);entriesAtivas(d).forEach(function(e){e.del=true;_mark(e)});notesAtivas(d).forEach(function(n){n.del=true;_mark(n)});save();render();toast('Motorista removido')})}
 
 /* ---------- Pagamento parcial ---------- */
@@ -937,7 +947,7 @@ function _syncIgual(a,b){return _syncSig(a)===_syncSig(b)}
    criar ping-pong entre versões diferentes do app. Tombstones (del) continuam entrando. */
 function _canonBusiness(x){
  if(Array.isArray(x)){var a=x.map(_canonBusiness);a.sort(function(u,v){var A=JSON.stringify(u),B=JSON.stringify(v);return A<B?-1:(A>B?1:0)});return a}
- if(x&&typeof x==='object'){var o={};Object.keys(x).sort().forEach(function(k){if(k==='rev'||k==='dev'||k==='at'||k==='by'||k==='weekAt'||k==='resetAt')return;o[k]=_canonBusiness(x[k])});return o}
+ if(x&&typeof x==='object'){var o={};Object.keys(x).sort().forEach(function(k){if(k==='rev'||k==='dev'||k==='at'||k==='by'||k==='weekAt'||k==='resetAt'||k==='fm')return;o[k]=_canonBusiness(x[k])});return o}
  return x;
 }
 function _businessSig(x){return JSON.stringify(_canonBusiness(x||{}))}
@@ -952,7 +962,7 @@ function toArr(x){
 }
 function norm(s){
  if(!s||typeof s!=='object')s={};var o={week:(typeof s.week==='string'?s.week:''),weekAt:Number(s.weekAt)||0,resetAt:Number(s.resetAt)||0,rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
- toArr(s.drivers).forEach(function(d){if(!d)return;var dd={id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',at:Number(d.at)||0,by:d.by||'',del:!!d.del,entries:[],notes:[]};
+ toArr(s.drivers).forEach(function(d){if(!d)return;var dd={id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',fm:(d.fm&&typeof d.fm==='object'?JSON.parse(JSON.stringify(d.fm)):{}),at:Number(d.at)||0,by:d.by||'',del:!!d.del,entries:[],notes:[]};
   toArr(d.entries).forEach(function(e){if(e)dd.entries.push({id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),at:Number(e.at)||0,by:e.by||'',del:!!e.del})});
   toArr(d.notes).forEach(function(n){if(n)dd.notes.push({id:n.id||uid(),t:n.t||'',at:Number(n.at)||0,by:n.by||'',del:!!n.del})});o.drivers.push(dd)
  });
