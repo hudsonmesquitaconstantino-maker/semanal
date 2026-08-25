@@ -505,7 +505,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=24; var APP_DATE='25/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=25; var APP_DATE='25/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -664,7 +664,29 @@ function _mergeState(a,b){
  out.rev=Math.max(Number(a.rev)||0,Number(b.rev)||0);out.dev=(Number(b.rev)||0)>(Number(a.rev)||0)?b.dev:((Number(b.rev)||0)<(Number(a.rev)||0)?a.dev:(String(b.dev||'')>String(a.dev||'')?b.dev:a.dev));return norm(out);
 }
 
-function driversAtivos(){return _active(state.drivers)}
+/* Ordem operacional histórica do Semanal. O merge distribuído ordena internamente
+   por id para ser determinístico, mas essa ordem técnica nunca deve alterar a ordem
+   de trabalho que Fábio já usa na tela/WhatsApp. Motoristas novos entram no final. */
+var DRIVER_ORDEM_LEGACY=[
+ 'jltv4z0','d31e4kq','wngwt95','f5d66s5','71zx7qx','gaouke5','7lzwbo1','1rhrkbl','hkueorp','wqp785y','vbuojv8','0u8nr6u','rtfq0lq','bpcnr0a','ygp8aan','g8yaf5j','2al3aoi','7cj2459','rn1soik','74t3g2i','nqnkrc6','l70htuj'
+];
+var DRIVER_ORDEM_FALLBACK=[
+ 'HUDSON/MICHELLI|','EDUARDO|PWL-8H97','ELCIMAR|KXJ-8F38','ALESSANDRO|KYI-8I20','ANDRÉ|FHP-4B47','REINALDO|LSY-7B47','CARLOS|QQF-8J26','FABRÍCIO|QUB-5G52','EUGENIO|IYZ-7E28','LUCAS|LUO-2B58','RAPHAEL|LUH-7G30','RÔMULO|RUK-6I75','VANDERLEI|GBV-3B96','EVERTON|QEK-3D83','RICARDO|RVX-9H52','GIOVANI|PZT-0F79','RODRIGO|LMY-2A63','CARLOS|RGB-3E35','ERNANI|AZH-5D13','FABIANO|IXY-2H87','LUCIANO|PXO-9H80','DYOGO|'
+];
+var _driverOrdId=(function(){var m={};DRIVER_ORDEM_LEGACY.forEach(function(id,i){m[id]=i});return m})();
+var _driverOrdFb=(function(){var m={};DRIVER_ORDEM_FALLBACK.forEach(function(k,i){m[k]=i});return m})();
+function _ordTexto(s){return String(s||'').trim().toUpperCase()}
+function _driverOrd(d){
+ if(d&&Object.prototype.hasOwnProperty.call(_driverOrdId,d.id))return _driverOrdId[d.id];
+ var k=_ordTexto(d&&d.name)+'|'+_ordTexto(d&&d.plate);
+ return Object.prototype.hasOwnProperty.call(_driverOrdFb,k)?_driverOrdFb[k]:100000;
+}
+function _ordenaDrivers(lista){
+ return _active(lista).map(function(d,i){return{d:d,i:i,o:_driverOrd(d)}}).sort(function(a,b){
+  if(a.o!==b.o)return a.o-b.o;return a.i-b.i;
+ }).map(function(x){return x.d});
+}
+function driversAtivos(){return _ordenaDrivers(state.drivers)}
 function entriesAtivas(d){return _active(d&&d.entries)}
 function notesAtivas(d){return _active(d&&d.notes)}
 function histAtivo(){return _active(state.history)}
@@ -826,7 +848,7 @@ function confirmPartial(){
 
 /* ---------- Texto WhatsApp ---------- */
 function buildText(drivers,week){
- var blocks=[];_active(drivers).forEach(function(d){var head=[d.name,d.car,d.color,d.plate].filter(function(x){return x&&x.trim()}).join(' | ');if(!head)return;var lines=['*'+head+'*'];entriesAtivas(d).forEach(function(e){lines.push(fmt(e.v)+(e.d&&e.d.trim()?' '+e.d.trim():'')+' '+(e.s==='paid'?'✅':'❌'))});notesAtivas(d).forEach(function(n){if(n.t&&n.t.trim())lines.push(n.t.trim())});blocks.push(lines.join('\n'))});var tt=totals(drivers);return '*SEMANAL - '+week+'*\n\n\n'+blocks.join('\n\n\n')+'\n\n\n*TOTAL SEMANAL - '+fmt(tt.all)+'*';
+ var blocks=[];_ordenaDrivers(drivers).forEach(function(d){var head=[d.name,d.car,d.color,d.plate].filter(function(x){return x&&x.trim()}).join(' | ');if(!head)return;var lines=['*'+head+'*'];entriesAtivas(d).forEach(function(e){lines.push(fmt(e.v)+(e.d&&e.d.trim()?' '+e.d.trim():'')+' '+(e.s==='paid'?'✅':'❌'))});notesAtivas(d).forEach(function(n){if(n.t&&n.t.trim())lines.push(n.t.trim())});blocks.push(lines.join('\n'))});var tt=totals(drivers);return '*SEMANAL - '+week+'*\n\n\n'+blocks.join('\n\n\n')+'\n\n\n*TOTAL SEMANAL - '+fmt(tt.all)+'*';
 }
 function openWhats(){
  document.getElementById('whatsText').textContent=buildText(state.drivers,state.week);
