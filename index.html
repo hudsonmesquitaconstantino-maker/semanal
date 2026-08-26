@@ -506,7 +506,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=29; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=31; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -937,7 +937,7 @@ function closeWeek(){
 
 /* ---------- Histórico ---------- */
 function openHistory(){
- var el=document.getElementById('histList'),h=histOrdenado();if(!h.length){el.innerHTML='<div class="empty">Nenhuma semana fechada ainda.<br>Use "Fechar semana" no menu ao fim de cada semana.</div>'}else{el.innerHTML=h.map(function(w){return '<div class="histItem" id="h-'+w.id+'"><div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div><div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+(w.carried!==undefined?' · Levado p/ semana seguinte '+fmt(w.carried):' · Pendente '+fmt(w.pend))+'</div></div><div class="tt">'+fmt(w.all)+'</div></div><div class="acts"><button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button><button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button><button class="mini" onclick="openHistEdit(\''+w.id+'\')">✏️ Editar</button><button class="mini" onclick="reopenHist(\''+w.id+'\')">↩ Reabrir</button><button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div><pre>'+esc(w.text)+'</pre></div>'}).join('')}document.getElementById('ovHist').classList.add('open');
+ var el=document.getElementById('histList'),h=histOrdenado();if(!h.length){el.innerHTML='<div class="empty">Nenhuma semana fechada ainda.<br>Use "Fechar semana" no menu ao fim de cada semana.</div>'}else{el.innerHTML=h.map(function(w){return '<div class="histItem" id="h-'+w.id+'"><div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div><div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+(w.carried!==undefined?' · Levado p/ semana seguinte '+fmt(w.carried):' · Pendente '+fmt(w.pend))+'</div></div><div class="tt">'+fmt(w.all)+'</div></div><div class="acts"><button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button><button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button><button class="mini" onclick="openHistEdit(\''+w.id+'\')">✏️ Editar</button><button class="mini" onclick="reopenHist(\''+w.id+'\')">'+(_reparo26BugAtual(w)?'🧹 Corrigir 26/08':'↩ Reabrir')+'</button><button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div><pre>'+esc(w.text)+'</pre></div>'}).join('')}document.getElementById('ovHist').classList.add('open');
 }
 var EH_ID=null;
 function openHistEdit(id){
@@ -975,15 +975,92 @@ function _semanaAtualTemMovimento(){
   return mov||obs;
  });
 }
+/* Assinatura SOMENTE dos lançamentos de negócio. Ignora metadados, ordem e linhas vazias.
+   No fechamento antigo, os pendentes eram carregados para a semana seguinte mantendo id,
+   valor e descrição. Isso permite reconhecer com segurança o caso 26/08 -> 02/09 sem
+   confundir os valores carregados automaticamente com lançamentos novos do usuário. */
+function _sigLancamentos(lista,soPendentes){
+ var rows=[];
+ _active(lista).forEach(function(d){
+  entriesAtivas(d).forEach(function(e){
+   var st=e.s==='paid'?'paid':'pend';if(soPendentes&&st!=='pend')return;
+   var v=Number(e.v)||0,desc=String(e.d||'').trim();if(v===0&&!desc)return;
+   rows.push([String(d.id||''),String(e.id||''),v,desc,st]);
+  });
+ });
+ rows.sort(function(a,b){var A=JSON.stringify(a),B=JSON.stringify(b);return A<B?-1:(A>B?1:0)});
+ return JSON.stringify(rows);
+}
+function _carryExatoDoFechamento(w){
+ if(!w||w.del)return false;
+ var t=totals(driversAtivos()),car=(typeof w.carried==='number'?w.carried:(Number(w.pend)||0));
+ if((Number(w.paid)||0)!==0||t.paid!==0||t.pend!==car)return false;
+ /* Só vale para a semana imediatamente posterior à que foi fechada. */
+ if(String(state.week||'').trim()!==_proxSemanaLabel(w.week,new Date()))return false;
+ return _sigLancamentos(state.drivers,false)===_sigLancamentos(w.drivers,true);
+}
+function _tombstoneReabertura(w,ts){
+ w.del=true;w.at=ts;w.by=DEV;
+ /* Chave exclusiva: mata ESTE fechamento nos outros aparelhos, sem bloquear um
+    fechamento legítimo futuro da mesma competência. */
+ w.periodKey='reopened:'+String(w.id||uid())+':'+ts;
+}
+/* REPARO CIRÚRGICO v31 — incidente de 26/08/2026.
+   O fechamento incorreto de 26/08 foi criado com R$0 recebido e os R$19.547,50
+   da semana anterior replicados como pendentes; em seguida a competência avançou
+   para 02/09. O usuário confirmou que NÃO existia nenhum lançamento real em 26/08
+   e que nada foi editado depois do avanço. Este detector é deliberadamente estreito
+   para nunca apagar uma semana legítima no futuro. */
+function _reparo26BugAtual(w){
+ if(!w||w.del)return false;
+ if(String(w.week||'').trim()!=='26/08')return false;
+ if(String(w.closedAt||'').trim()!=='26/08/2026')return false;
+ if(String(state.week||'').trim()!=='02/09')return false;
+ var t=totals(driversAtivos()),car=Number(w.carried)||0;
+ return (Number(w.paid)||0)===0 && car>0 && t.paid===0 && t.pend===car;
+}
+function _executarReparo26Bug(w){
+ var ts=_ag();
+ /* Mata TODOS os lançamentos/observações atualmente replicados em 02/09. Tombstones
+    vencem qualquer cópia antiga que ainda exista no outro iPhone. */
+ driversAtivos().forEach(function(d){
+  entriesAtivas(d).forEach(function(e){e.del=true;e.at=ts;e.by=DEV});
+  notesAtivas(d).forEach(function(n){n.del=true;n.at=ts;n.by=DEV});
+  d.entries=toArr(d.entries);
+  d.entries.push({id:uid(),v:0,d:'',s:'pend',at:ts,by:DEV,del:false});
+  _mark(d);
+ });
+ /* Remove definitivamente o falso fechamento de 26/08 sem impedir um fechamento
+    legítimo futuro da mesma competência. */
+ _tombstoneReabertura(w,ts);
+ state.week='26/08';state.weekAt=ts;filter='all';
+ _lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();
+ document.getElementById('ovHist').classList.remove('open');render();
+ toast('✅ 26/08 restaurada vazia — valores replicados removidos');
+}
 function reopenHist(id){
  var w=histAtivo().filter(function(x){return x.id===id})[0];if(!w)return;
- if(_semanaAtualTemMovimento()){
-  toast('⚠️ A semana atual já tem lançamentos. Reabertura automática bloqueada para não perder dados.');return;
+ if(_reparo26BugAtual(w)){
+  ask('Corrigir semana 26/08','Foi detectado exatamente o fechamento incorreto atual: 26/08 foi fechado com R$0 recebido, os valores da semana anterior foram replicados e a tela avançou para 02/09.\n\nComo não existia lançamento real em 26/08, esta correção vai APAGAR os valores replicados, remover o falso fechamento do histórico e devolver 26/08 VAZIA para começar os lançamentos corretos.','Corrigir 26/08',function(){_executarReparo26Bug(w)});
+  return;
  }
- ask('Reabrir semana '+w.week,
-  'Esta ação desfaz o fechamento de '+w.week+', remove esse fechamento do histórico e restaura os lançamentos daquela semana para edição.\n\nA semana atual está sem lançamentos e será substituída.',
-  'Reabrir semana',function(){
-   var ts=_ag(),cur=toArr(state.drivers),byId={};
+ var ultimo=histOrdenado()[0];
+ if(!ultimo||ultimo.id!==w.id){toast('⚠️ Só a semana fechada mais recente pode ser reaberta.');return}
+ var temMov=_semanaAtualTemMovimento(),carryExato=temMov&&_carryExatoDoFechamento(w);
+ if(temMov&&!carryExato){
+  toast('⚠️ A semana atual tem lançamentos diferentes. Reabertura bloqueada para não perder dados.');return;
+ }
+ var msg=carryExato
+  ?'O app reconheceu que os lançamentos da semana atual são exatamente os valores pendentes levados automaticamente do fechamento de '+w.week+'.\n\nA competência volta para '+w.week+', esses lançamentos permanecem intactos e o fechamento incorreto é removido do histórico.'
+  :'Esta ação desfaz o fechamento de '+w.week+', remove esse fechamento do histórico e restaura os lançamentos daquela semana para edição.\n\nA semana atual está vazia e será substituída.';
+ ask('Reabrir semana '+w.week,msg,'Reabrir semana',function(){
+  var ts=_ag();
+  if(carryExato){
+   /* RECUPERAÇÃO LEGACY: não copia nem recria nada. Os lançamentos atuais JÁ SÃO os
+      pendentes da semana fechada incorretamente. Apenas devolve a competência. */
+   state.week=w.week;state.weekAt=ts;filter='all';_tombstoneReabertura(w,ts);
+  }else{
+   var cur=toArr(state.drivers),byId={};
    cur.forEach(function(d){if(!d)return;byId[d.id]=d;entriesAtivas(d).forEach(function(e){e.del=true;e.at=ts;e.by=DEV});notesAtivas(d).forEach(function(n){n.del=true;n.at=ts;n.by=DEV})});
    _active(w.drivers).forEach(function(sd){
     var d=byId[sd.id];
@@ -994,15 +1071,12 @@ function reopenHist(id){
     notesAtivas(sd).forEach(function(n){d.notes.push({id:uid(),t:n.t||'',at:ts,by:DEV,del:false})});
     _mark(d);
    });
-   state.week=w.week;state.weekAt=ts;filter='all';
-   /* Tombstone de REABERTURA usa uma chave exclusiva. Assim ele mata o fechamento
-      incorreto nos outros aparelhos, mas não bloqueia o fechamento legítimo futuro
-      da mesma competência quando a semana realmente terminar. */
-   w.del=true;w.at=ts;w.by=DEV;w.periodKey='reopened:'+String(w.id||uid())+':'+ts;
-   _lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();
-   document.getElementById('ovHist').classList.remove('open');render();
-   toast('↩ Semana '+state.week+' reaberta e restaurada');
-  });
+   state.week=w.week;state.weekAt=ts;filter='all';_tombstoneReabertura(w,ts);
+  }
+  _lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();
+  document.getElementById('ovHist').classList.remove('open');render();
+  toast('↩ Semana '+state.week+' reaberta e restaurada');
+ });
 }
 function delHist(id){var w=histAtivo().filter(function(x){return x.id===id})[0];if(!w)return;ask('Excluir do histórico','Excluir a semana '+w.week+' ('+fmt(w.all)+') do histórico? Isso não pode ser desfeito.','Excluir',function(){w.del=true;_mark(w);_lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();openHistory();toast('Semana excluída do histórico')})}
 
