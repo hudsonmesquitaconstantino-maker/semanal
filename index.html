@@ -317,6 +317,7 @@ body.locked .plate input,body.locked .note input,body.locked #weekLabel{backgrou
   opacity:0;pointer-events:none;display:flex;transition:opacity .18s ease
 }
 .overlay.open{opacity:1;pointer-events:auto}
+#ovAsk{z-index:230}
 .sheet{
   width:calc(100% - 12px);max-width:560px;border-radius:24px 24px 0 0;
   padding:12px 14px calc(18px + env(safe-area-inset-bottom));max-height:min(82dvh,720px);
@@ -505,7 +506,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=28; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=29; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -649,7 +650,10 @@ function _mergeState(a,b){
  a=norm(a||{});b=norm(b||{});var reset=Math.max(Number(a.resetAt)||0,Number(b.resetAt)||0);
  function clip(s){if(!reset)return s;var ds=[];toArr(s.drivers).forEach(function(d){if(!d)return;var c=JSON.parse(JSON.stringify(d));c.entries=toArr(c.entries).filter(function(e){return (Number(e&&e.at)||0)>=reset});c.notes=toArr(c.notes).filter(function(n){return (Number(n&&n.at)||0)>=reset});var raiz=(Number(c.at)||0)>=reset;if(raiz||c.entries.length||c.notes.length)ds.push(c)});s.drivers=ds;s.history=toArr(s.history).filter(function(w){return (Number(w&&w.at)||0)>=reset});return s}
  a=clip(a);b=clip(b);var out={},aw=Number(a.weekAt)||0,bw=Number(b.weekAt)||0,ao=_weekOrdem(a.week,aw),bo=_weekOrdem(b.week,bw),win,lose;
- if(bo>ao||(bo===ao&&(bw>aw||(bw===aw&&String(b.dev||'')>String(a.dev||''))))){win=b;lose=a}else{win=a;lose=b}out.week=win.week;out.weekAt=Number(win.weekAt)||0;
+ /* v29: a edição/fechamento/reabertura MAIS RECENTE da semana vence. A data da semana
+    só desempata estados com o mesmo weekAt. Isso permite reabrir 26/08 sem um iPhone
+    atrasado em 02/09 empurrar a semana para frente novamente. */
+ if(bw>aw||(bw===aw&&(bo>ao||(bo===ao&&String(b.dev||'')>String(a.dev||''))))){win=b;lose=a}else{win=a;lose=b}out.week=win.week;out.weekAt=Number(win.weekAt)||0;
  out.history=_mergeHistoryList(a.history,b.history);
  if(a.week===b.week){out.drivers=_mergeById(a.drivers,b.drivers,_mergeDriver)}else{
   /* Estado atrasado pertence à semana antiga. Entradas novas feitas nele depois do
@@ -927,13 +931,13 @@ function closeWeek(){
   /* v28: zera a semana nova — apaga TODOS os lançamentos (pagos e pendentes) e as
      observações, e deixa cada motorista com uma linha em branco para lançar um por um. */
   ativos.forEach(function(d){entriesAtivas(d).forEach(function(e){e.del=true;e.at=ts;e.by=DEV});notesAtivas(d).forEach(function(n){n.del=true;n.at=ts;n.by=DEV});d.entries.push({id:uid(),v:0,d:'',s:'pend',at:ts,by:DEV,del:false});_mark(d)});
-  state.week=_proxSemanaLabel(state.week,now);state.weekAt=ts;filter='all';_lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();render();toast('Semana fechada ✓ Pendências levadas para a semana nova');
+  state.week=_proxSemanaLabel(state.week,now);state.weekAt=ts;filter='all';_lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();render();toast('Semana fechada ✓ Próxima semana aberta zerada');
  })
 }
 
 /* ---------- Histórico ---------- */
 function openHistory(){
- var el=document.getElementById('histList'),h=histOrdenado();if(!h.length){el.innerHTML='<div class="empty">Nenhuma semana fechada ainda.<br>Use "Fechar semana" no menu ao fim de cada semana.</div>'}else{el.innerHTML=h.map(function(w){return '<div class="histItem" id="h-'+w.id+'"><div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div><div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+(w.carried!==undefined?' · Levado p/ semana seguinte '+fmt(w.carried):' · Pendente '+fmt(w.pend))+'</div></div><div class="tt">'+fmt(w.all)+'</div></div><div class="acts"><button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button><button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button><button class="mini" onclick="openHistEdit(\''+w.id+'\')">✏️ Editar</button><button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div><pre>'+esc(w.text)+'</pre></div>'}).join('')}document.getElementById('ovHist').classList.add('open');
+ var el=document.getElementById('histList'),h=histOrdenado();if(!h.length){el.innerHTML='<div class="empty">Nenhuma semana fechada ainda.<br>Use "Fechar semana" no menu ao fim de cada semana.</div>'}else{el.innerHTML=h.map(function(w){return '<div class="histItem" id="h-'+w.id+'"><div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div><div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+(w.carried!==undefined?' · Levado p/ semana seguinte '+fmt(w.carried):' · Pendente '+fmt(w.pend))+'</div></div><div class="tt">'+fmt(w.all)+'</div></div><div class="acts"><button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button><button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button><button class="mini" onclick="openHistEdit(\''+w.id+'\')">✏️ Editar</button><button class="mini" onclick="reopenHist(\''+w.id+'\')">↩ Reabrir</button><button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div><pre>'+esc(w.text)+'</pre></div>'}).join('')}document.getElementById('ovHist').classList.add('open');
 }
 var EH_ID=null;
 function openHistEdit(id){
@@ -963,6 +967,42 @@ function saveHistEdit(){
 function copyHist(id){
  var w=histAtivo().filter(function(x){return x.id===id})[0]; if(!w)return;
  doCopy(w.text,function(){toast('Semana '+w.week+' copiada')});
+}
+function _semanaAtualTemMovimento(){
+ return driversAtivos().some(function(d){
+  var mov=entriesAtivas(d).some(function(e){return (Number(e.v)||0)!==0||String(e.d||'').trim()!==''});
+  var obs=notesAtivas(d).some(function(n){return String(n.t||'').trim()!==''});
+  return mov||obs;
+ });
+}
+function reopenHist(id){
+ var w=histAtivo().filter(function(x){return x.id===id})[0];if(!w)return;
+ if(_semanaAtualTemMovimento()){
+  toast('⚠️ A semana atual já tem lançamentos. Reabertura automática bloqueada para não perder dados.');return;
+ }
+ ask('Reabrir semana '+w.week,
+  'Esta ação desfaz o fechamento de '+w.week+', remove esse fechamento do histórico e restaura os lançamentos daquela semana para edição.\n\nA semana atual está sem lançamentos e será substituída.',
+  'Reabrir semana',function(){
+   var ts=_ag(),cur=toArr(state.drivers),byId={};
+   cur.forEach(function(d){if(!d)return;byId[d.id]=d;entriesAtivas(d).forEach(function(e){e.del=true;e.at=ts;e.by=DEV});notesAtivas(d).forEach(function(n){n.del=true;n.at=ts;n.by=DEV})});
+   _active(w.drivers).forEach(function(sd){
+    var d=byId[sd.id];
+    if(!d){d={id:sd.id||uid(),name:sd.name||'',car:sd.car||'',color:sd.color||'',plate:sd.plate||'',ord:Number(sd.ord)||0,fm:{},at:ts,by:DEV,del:false,entries:[],notes:[]};state.drivers.push(d);byId[d.id]=d}
+    d.del=false;d.name=sd.name||d.name||'';d.car=sd.car||d.car||'';d.color=sd.color||d.color||'';d.plate=sd.plate||d.plate||'';if(Number(sd.ord)||0)d.ord=Number(sd.ord)||0;
+    d.entries=toArr(d.entries);d.notes=toArr(d.notes);
+    entriesAtivas(sd).forEach(function(e){d.entries.push({id:uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),at:ts,by:DEV,del:false})});
+    notesAtivas(sd).forEach(function(n){d.notes.push({id:uid(),t:n.t||'',at:ts,by:DEV,del:false})});
+    _mark(d);
+   });
+   state.week=w.week;state.weekAt=ts;filter='all';
+   /* Tombstone de REABERTURA usa uma chave exclusiva. Assim ele mata o fechamento
+      incorreto nos outros aparelhos, mas não bloqueia o fechamento legítimo futuro
+      da mesma competência quando a semana realmente terminar. */
+   w.del=true;w.at=ts;w.by=DEV;w.periodKey='reopened:'+String(w.id||uid())+':'+ts;
+   _lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();
+   document.getElementById('ovHist').classList.remove('open');render();
+   toast('↩ Semana '+state.week+' reaberta e restaurada');
+  });
 }
 function delHist(id){var w=histAtivo().filter(function(x){return x.id===id})[0];if(!w)return;ask('Excluir do histórico','Excluir a semana '+w.week+' ('+fmt(w.all)+') do histórico? Isso não pode ser desfeito.','Excluir',function(){w.del=true;_mark(w);_lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();openHistory();toast('Semana excluída do histórico')})}
 
