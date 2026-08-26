@@ -506,7 +506,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=31; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=32; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -646,6 +646,33 @@ function _mergeHistoryList(A,B){
     depois deduplica fechamentos concorrentes que nasceram com ids diferentes no mesmo período. */
  var porId=_mergeById(A,B,_mergeHist),m={};porId.forEach(function(w){if(!w)return;var k=w.periodKey||_periodKey(w.week,w.closedAt)||('id:'+w.id);m[k]=m[k]?_mergeHist(m[k],w):w});return Object.keys(m).sort().map(function(k){return m[k]})
 }
+/* REPARO AUTOMÁTICO v32 — fecha a sobra do incidente 26/08/2026.
+   Depois do v31 a semana aberta já voltou corretamente para 26/08 vazia, mas um
+   fechamento fantasma concorrente podia sobreviver no histórico com outro id e
+   continuar sendo consumido pelo Resultados como "real fechada R$0,00".
+   A assinatura abaixo é deliberadamente exata: só atinge o registro falso criado
+   em 26/08/2026 com R$0 recebido e R$19.547,50 carregados da semana 19/08. */
+function _ehFechamentoFantasma26(w){
+ if(!w||w.del)return false;
+ return String(w.week||'').trim()==='26/08'
+  && String(w.closedAt||'').trim()==='26/08/2026'
+  && (Number(w.paid)||0)===0
+  && (Number(w.carried)||0)===1954750;
+}
+function _limparFechamentosFantasma26Em(s){
+ if(!s||!Array.isArray(s.history))return 0;
+ var ts=_ag(),n=0;
+ s.history.forEach(function(w){
+  if(!_ehFechamentoFantasma26(w))return;
+  w.del=true;w.at=ts;w.by=DEV;
+  /* chave exclusiva: elimina este fechamento falso sem bloquear o fechamento
+     legítimo futuro da própria competência 26/08. */
+  w.periodKey='repaired26:'+String(w.id||uid())+':'+ts;
+  n++;
+ });
+ return n;
+}
+
 function _mergeState(a,b){
  a=norm(a||{});b=norm(b||{});var reset=Math.max(Number(a.resetAt)||0,Number(b.resetAt)||0);
  function clip(s){if(!reset)return s;var ds=[];toArr(s.drivers).forEach(function(d){if(!d)return;var c=JSON.parse(JSON.stringify(d));c.entries=toArr(c.entries).filter(function(e){return (Number(e&&e.at)||0)>=reset});c.notes=toArr(c.notes).filter(function(n){return (Number(n&&n.at)||0)>=reset});var raiz=(Number(c.at)||0)>=reset;if(raiz||c.entries.length||c.notes.length)ds.push(c)});s.drivers=ds;s.history=toArr(s.history).filter(function(w){return (Number(w&&w.at)||0)>=reset});return s}
@@ -668,7 +695,7 @@ function _mergeState(a,b){
      registro da semana fechada já tiver chegado. Isso elimina o "tudo pago". */
  }
  out.resetAt=reset;if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
- out.rev=Math.max(Number(a.rev)||0,Number(b.rev)||0);out.dev=(Number(b.rev)||0)>(Number(a.rev)||0)?b.dev:((Number(b.rev)||0)<(Number(a.rev)||0)?a.dev:(String(b.dev||'')>String(a.dev||'')?b.dev:a.dev));return norm(out);
+ out.rev=Math.max(Number(a.rev)||0,Number(b.rev)||0);out.dev=(Number(b.rev)||0)>(Number(a.rev)||0)?b.dev:((Number(b.rev)||0)<(Number(a.rev)||0)?a.dev:(String(b.dev||'')>String(a.dev||'')?b.dev:a.dev));_limparFechamentosFantasma26Em(out);return norm(out);
 }
 
 /* Ordem operacional histórica do Semanal. O merge distribuído ordena internamente
@@ -937,6 +964,7 @@ function closeWeek(){
 
 /* ---------- Histórico ---------- */
 function openHistory(){
+ var _n26=_limparFechamentosFantasma26Em(state);if(_n26){touch();persist(true);schedulePush()}
  var el=document.getElementById('histList'),h=histOrdenado();if(!h.length){el.innerHTML='<div class="empty">Nenhuma semana fechada ainda.<br>Use "Fechar semana" no menu ao fim de cada semana.</div>'}else{el.innerHTML=h.map(function(w){return '<div class="histItem" id="h-'+w.id+'"><div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div><div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+(w.carried!==undefined?' · Levado p/ semana seguinte '+fmt(w.carried):' · Pendente '+fmt(w.pend))+'</div></div><div class="tt">'+fmt(w.all)+'</div></div><div class="acts"><button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button><button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button><button class="mini" onclick="openHistEdit(\''+w.id+'\')">✏️ Editar</button><button class="mini" onclick="reopenHist(\''+w.id+'\')">'+(_reparo26BugAtual(w)?'🧹 Corrigir 26/08':'↩ Reabrir')+'</button><button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div><pre>'+esc(w.text)+'</pre></div>'}).join('')}document.getElementById('ovHist').classList.add('open');
 }
 var EH_ID=null;
@@ -1293,9 +1321,12 @@ if('serviceWorker' in navigator){
 }
 
 load();
+var _fix26Boot=_limparFechamentosFantasma26Em(state);
+if(_fix26Boot){touch();persist(true)}
 try{_lastPersistRaw=JSON.stringify(state);_lastUserBusinessSig=_businessSig(state)}catch(e){}
 _setSaved('Salvo ✓');render();
 try{startSync()}catch(e){}
+if(_fix26Boot)schedulePush();
 </script>
 </body>
 </html>
