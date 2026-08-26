@@ -505,7 +505,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=27; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=28; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -658,7 +658,10 @@ function _mergeState(a,b){
   if(h){h.drivers=_mergeById(h.drivers,lose.drivers,_mergeDriver);_histRecalc(h);var hm=0;toArr(lose.drivers).forEach(function(d){hm=Math.max(hm,Number(d&&d.at)||0,_latestChildAt(d))});if(hm>Number(h.at)||0)h.at=hm;
     /* alterações cadastrais de nome/carro/cor/placa continuam chegando à ficha atual */
     var by={};toArr(out.drivers).forEach(function(d){by[d.id]=d});toArr(lose.drivers).forEach(function(d){if(by[d.id]){var root=_mergeDriverRoot(by[d.id],d);['name','car','color','plate','fm','at','by'].forEach(function(k){by[d.id][k]=root[k]})}})
-  }else out.drivers=_mergeById(win.drivers,lose.drivers,_mergeDriver)
+  }/* v28: sem histórico correspondente da semana antiga ainda? NÃO misturar os
+     lançamentos vivos do aparelho atrasado na semana nova. Mantém out.drivers=win
+     (semana nova zerada). O que faltou entra no histórico no próximo sync, quando o
+     registro da semana fechada já tiver chegado. Isso elimina o "tudo pago". */
  }
  out.resetAt=reset;if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
  out.rev=Math.max(Number(a.rev)||0,Number(b.rev)||0);out.dev=(Number(b.rev)||0)>(Number(a.rev)||0)?b.dev:((Number(b.rev)||0)<(Number(a.rev)||0)?a.dev:(String(b.dev||'')>String(a.dev||'')?b.dev:a.dev));return norm(out);
@@ -918,10 +921,12 @@ function _proxSemanaLabel(week,ref){
  var y=ref.getFullYear(),base=new Date(y,m-1,d);if(base-ref>120*86400000)base=new Date(y-1,m-1,d);else if(ref-base>300*86400000)base=new Date(y+1,m-1,d);base.setDate(base.getDate()+7);return ('0'+base.getDate()).slice(-2)+'/'+('0'+(base.getMonth()+1)).slice(-2)
 }
 function closeWeek(){
- var ativos=driversAtivos(),tt=totals(ativos);ask('Fechar semana '+state.week,'Recebido: '+fmt(tt.paid)+' → fecha no histórico como o valor da semana.\nPendente: '+fmt(tt.pend)+' → os lançamentos ❌ vão automaticamente para a semana nova.\n\nOs motoristas continuam na lista.','Fechar semana',function(){
+ var ativos=driversAtivos(),tt=totals(ativos);ask('Fechar semana '+state.week,'Recebido: '+fmt(tt.paid)+' → fecha no histórico como o valor da semana.\n\nA semana NOVA abre com todos os motoristas ZERADOS (sem valor), para você lançar um por um.','Fechar semana',function(){
   var now=new Date(),ts=_ag(),stamp=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear(),snap=JSON.parse(JSON.stringify(ativos));
-  var h={id:uid(),periodKey:_periodKey(state.week,stamp),week:state.week,closedAt:stamp,paid:tt.paid,pend:tt.pend,all:tt.paid,carried:tt.pend,text:buildText(snap,state.week),drivers:snap,at:ts,by:DEV,del:false};state.history.unshift(h);
-  ativos.forEach(function(d){entriesAtivas(d).forEach(function(e){if(e.s==='paid'){e.del=true;e.at=ts;e.by=DEV}});notesAtivas(d).forEach(function(n){n.del=true;n.at=ts;n.by=DEV});_mark(d)});
+  var h={id:uid(),periodKey:_periodKey(state.week,stamp),week:state.week,closedAt:stamp,paid:tt.paid,pend:tt.pend,all:tt.paid,carried:0,text:buildText(snap,state.week),drivers:snap,at:ts,by:DEV,del:false};state.history.unshift(h);
+  /* v28: zera a semana nova — apaga TODOS os lançamentos (pagos e pendentes) e as
+     observações, e deixa cada motorista com uma linha em branco para lançar um por um. */
+  ativos.forEach(function(d){entriesAtivas(d).forEach(function(e){e.del=true;e.at=ts;e.by=DEV});notesAtivas(d).forEach(function(n){n.del=true;n.at=ts;n.by=DEV});d.entries.push({id:uid(),v:0,d:'',s:'pend',at:ts,by:DEV,del:false});_mark(d)});
   state.week=_proxSemanaLabel(state.week,now);state.weekAt=ts;filter='all';_lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();render();toast('Semana fechada ✓ Pendências levadas para a semana nova');
  })
 }
