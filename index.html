@@ -379,7 +379,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
   </div>
   <div class="periodLine">
     <label for="weekLabel">SEMANA</label>
-    <input id="weekLabel" placeholder="dd/mm" maxlength="12">
+    <input id="weekLabel" placeholder="dd/mm" maxlength="12" readonly aria-readonly="true">
     <div id="verTag"></div>
   </div>
   <div class="totais">
@@ -506,10 +506,11 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=32; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=33; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
+  if(typeof CRIT!=='undefined'&&CRIT&&CRIT.busy)return false;
   var a=document.activeElement;
   if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'))return false;
   var ovs=document.querySelectorAll?document.querySelectorAll('.overlay.open'):[];
@@ -524,16 +525,18 @@ function checkUpdate(){
    var m=t.match(/APP_VER=(\d+)/);
    if(m&&parseInt(m[1],10)>APP_VER&&!_updFound){
     _updFound=true;
-    toast('⬆️ Atualizando para a versão nova…');
+    var nv=parseInt(m[1],10);toast('⬆️ Atualizando para a v'+nv+'…');
     setTimeout(function tryReload(){
-     if(safeToReload()){location.reload();}
-     else{setTimeout(tryReload,20000);}
-    },1500);
+     if(safeToReload()){
+      try{document.open();document.write(t);document.close()}
+      catch(e){try{location.replace(location.pathname+'?v='+nv)}catch(e2){location.reload()}}
+     }else{setTimeout(tryReload,5000)}
+    },700);
    }
   }).catch(function(){});
  }catch(e){}
 }
-setTimeout(checkUpdate,4000);            // ao abrir
+setTimeout(checkUpdate,800);            // ao abrir
 try{
  document.addEventListener('visibilitychange',function(){
   if(document.visibilityState==='visible') checkUpdate();   // app reaberto/descongelado
@@ -598,7 +601,17 @@ function _mark(o){if(!o)return;o.at=_ag();o.by=DEV}
 function _meta(o){return {at:Number(o&&o.at)||0,by:String(o&&o.by||'')}}
 function _newer(a,b){
  if(!a)return b;if(!b)return a;
- if(!!a.del!==!!b.del){if(a.del||b.del)return a.del?a:b} /* tombstone é definitivo */
+ if(!!a.del!==!!b.del){
+  var tomb=a.del?a:b,live=a.del?b:a,ra=String(tomb.delReason||'');
+  /* v33: tombstone criado por VIRADA não é uma exclusão do usuário. Se o outro
+     iPhone editou o lançamento DEPOIS do fechamento, a edição sobrevive e será
+     reconciliada no histórico da semana antiga. Exclusão manual continua final. */
+  if(ra==='rollover'||ra==='period-replace'){
+   var ta=Number(tomb.at)||0,la=Number(live.at)||0;
+   if(la>ta)return live;
+  }
+  return tomb;
+ }
  var ma=_meta(a),mb=_meta(b);if(ma.at!==mb.at)return mb.at>ma.at?b:a;
  if(ma.by!==mb.by)return mb.by>ma.by?b:a;
  return JSON.stringify(b)>JSON.stringify(a)?b:a;
@@ -951,15 +964,57 @@ function _proxSemanaLabel(week,ref){
  }
  var y=ref.getFullYear(),base=new Date(y,m-1,d);if(base-ref>120*86400000)base=new Date(y-1,m-1,d);else if(ref-base>300*86400000)base=new Date(y+1,m-1,d);base.setDate(base.getDate()+7);return ('0'+base.getDate()).slice(-2)+'/'+('0'+(base.getMonth()+1)).slice(-2)
 }
+var CRIT={busy:false,label:''};
+function _critReady(label){
+ if(CRIT.busy){toast('⏳ Operação crítica em andamento');return false}
+ if(!SYNC.ref||!SYNC.gotRemote||!SYNC.online){toast('⛔ '+label+' só pode ser feito com a sincronização verde');return false}
+ if(inputFocused()){toast('⚠️ Termine a edição do campo antes de '+label.toLowerCase());return false}
+ return true;
+}
+function _critTxn(label,mutator,okMsg){
+ if(!_critReady(label))return;
+ CRIT.busy=true;CRIT.label=label;setPill('wait','🟡 conferindo nuvem…');
+ var motivo='';
+ SYNC.ref.transaction(function(cur){
+  if(!cur){motivo='A nuvem ainda não possui uma base válida.';return}
+  var base=_mergeState(norm(cur),norm(state));
+  var r=mutator(base);if(r!==true){motivo=String(r||'Conflito entre aparelhos.');return}
+  base.rev=Math.max(_ag(),Number(base.rev)||0,Number(cur&&cur.rev)||0);base.dev=DEV;return norm(base);
+ },function(err,committed,snap){
+  CRIT.busy=false;CRIT.label='';setPill(SYNC.online?'on':'wait',SYNC.online?'🟢 sincronizado':'🟡 offline — na fila');
+  if(err){toast('⛔ '+label+' falhou: '+err.message);return}
+  if(!committed){
+   if(snap&&snap.val())adopt(snap.val());
+   toast('⛔ '+(motivo||label+' cancelado para proteger os dados'));return;
+  }
+  if(snap&&snap.val()){state=norm(snap.val());_lastUserBusinessSig=_businessSig(state);persist(false);filter='all';render()}
+  toast(okMsg);
+ },false);
+}
+function _ativosDoEstado(st){return _active(st&&st.drivers)}
+function _temMovimentoEstado(st){return _ativosDoEstado(st).some(function(d){return entriesAtivas(d).some(function(e){return (Number(e.v)||0)!==0||String(e.d||'').trim()!==''})||notesAtivas(d).some(function(n){return String(n.t||'').trim()!==''})})}
+function _histAtivoEstado(st){return toArr(st&&st.history).filter(function(w){return w&&!w.del})}
+function _histMaisRecenteEstado(st){var h=_histAtivoEstado(st).slice().sort(function(a,b){return (Number(b.at)||0)-(Number(a.at)||0)});return h[0]||null}
 function closeWeek(){
- var ativos=driversAtivos(),tt=totals(ativos);ask('Fechar semana '+state.week,'Recebido: '+fmt(tt.paid)+' → fecha no histórico como o valor da semana.\n\nA semana NOVA abre com todos os motoristas ZERADOS (sem valor), para você lançar um por um.','Fechar semana',function(){
-  var now=new Date(),ts=_ag(),stamp=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear(),snap=JSON.parse(JSON.stringify(ativos));
-  var h={id:uid(),periodKey:_periodKey(state.week,stamp),week:state.week,closedAt:stamp,paid:tt.paid,pend:tt.pend,all:tt.paid,carried:0,text:buildText(snap,state.week),drivers:snap,at:ts,by:DEV,del:false};state.history.unshift(h);
-  /* v28: zera a semana nova — apaga TODOS os lançamentos (pagos e pendentes) e as
-     observações, e deixa cada motorista com uma linha em branco para lançar um por um. */
-  ativos.forEach(function(d){entriesAtivas(d).forEach(function(e){e.del=true;e.at=ts;e.by=DEV});notesAtivas(d).forEach(function(n){n.del=true;n.at=ts;n.by=DEV});d.entries.push({id:uid(),v:0,d:'',s:'pend',at:ts,by:DEV,del:false});_mark(d)});
-  state.week=_proxSemanaLabel(state.week,now);state.weekAt=ts;filter='all';_lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();render();toast('Semana fechada ✓ Próxima semana aberta zerada');
- })
+ if(LOCK){toast('🔒 Destrave a edição antes de fechar a semana');return}
+ var semana=state.week,tt=totals(driversAtivos());
+ ask('Fechar semana '+semana,'Recebido: '+fmt(tt.paid)+' → fecha no histórico como o valor da semana.\n\nAntes de fechar, o app vai conferir a nuvem. Se o outro iPhone tiver alguma alteração ainda não recebida, ela entra no fechamento. A semana nova abre zerada.','Fechar semana',function(){
+  var now=new Date(),ts=_ag(),stamp=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear(),pk=_periodKey(semana,stamp),next=_proxSemanaLabel(semana,now),closeId='close_'+pk.replace(/[^A-Za-z0-9]/g,'_')+'_'+ts;
+  _critTxn('Fechar semana',function(base){
+   if(base.week!==semana)return 'Outro aparelho mudou a semana para '+base.week+'. Revise antes de fechar.';
+   if(_histAtivoEstado(base).some(function(w){return (w.periodKey||_periodKey(w.week,w.closedAt))===pk}))return 'A semana '+semana+' já aparece fechada na nuvem.';
+   var ativos=_ativosDoEstado(base),t=totals(ativos),snap=JSON.parse(JSON.stringify(ativos));
+   base.history.unshift({id:closeId,periodKey:pk,week:semana,closedAt:stamp,paid:t.paid,pend:t.pend,all:t.paid,carried:0,text:buildText(snap,semana),drivers:snap,at:ts,by:DEV,del:false,delReason:''});
+   ativos.forEach(function(d){
+    entriesAtivas(d).forEach(function(e){e.del=true;e.delReason='rollover';e.at=ts;e.by=DEV});
+    notesAtivas(d).forEach(function(n){n.del=true;n.delReason='rollover';n.at=ts;n.by=DEV});
+    d.entries=toArr(d.entries);var bid='blank_'+String(d.id||'d')+'_'+_periodKey(next,stamp).replace(/[^A-Za-z0-9]/g,'_');
+    if(!d.entries.some(function(e){return e&&e.id===bid&&!e.del}))d.entries.push({id:bid,v:0,d:'',s:'pend',at:ts,by:DEV,del:false,delReason:'',originCloseId:closeId});
+    d.at=ts;d.by=DEV;
+   });
+   base.week=next;base.weekAt=ts;return true;
+  },'Semana '+semana+' fechada com conferência da nuvem ✓');
+ });
 }
 
 /* ---------- Histórico ---------- */
@@ -1067,46 +1122,38 @@ function _executarReparo26Bug(w){
  toast('✅ 26/08 restaurada vazia — valores replicados removidos');
 }
 function reopenHist(id){
+ if(LOCK){toast('🔒 Destrave a edição antes de reabrir uma semana');return}
  var w=histAtivo().filter(function(x){return x.id===id})[0];if(!w)return;
- if(_reparo26BugAtual(w)){
-  ask('Corrigir semana 26/08','Foi detectado exatamente o fechamento incorreto atual: 26/08 foi fechado com R$0 recebido, os valores da semana anterior foram replicados e a tela avançou para 02/09.\n\nComo não existia lançamento real em 26/08, esta correção vai APAGAR os valores replicados, remover o falso fechamento do histórico e devolver 26/08 VAZIA para começar os lançamentos corretos.','Corrigir 26/08',function(){_executarReparo26Bug(w)});
-  return;
- }
- var ultimo=histOrdenado()[0];
- if(!ultimo||ultimo.id!==w.id){toast('⚠️ Só a semana fechada mais recente pode ser reaberta.');return}
- var temMov=_semanaAtualTemMovimento(),carryExato=temMov&&_carryExatoDoFechamento(w);
- if(temMov&&!carryExato){
-  toast('⚠️ A semana atual tem lançamentos diferentes. Reabertura bloqueada para não perder dados.');return;
- }
- var msg=carryExato
-  ?'O app reconheceu que os lançamentos da semana atual são exatamente os valores pendentes levados automaticamente do fechamento de '+w.week+'.\n\nA competência volta para '+w.week+', esses lançamentos permanecem intactos e o fechamento incorreto é removido do histórico.'
-  :'Esta ação desfaz o fechamento de '+w.week+', remove esse fechamento do histórico e restaura os lançamentos daquela semana para edição.\n\nA semana atual está vazia e será substituída.';
- ask('Reabrir semana '+w.week,msg,'Reabrir semana',function(){
-  var ts=_ag();
-  if(carryExato){
-   /* RECUPERAÇÃO LEGACY: não copia nem recria nada. Os lançamentos atuais JÁ SÃO os
-      pendentes da semana fechada incorretamente. Apenas devolve a competência. */
-   state.week=w.week;state.weekAt=ts;filter='all';_tombstoneReabertura(w,ts);
-  }else{
-   var cur=toArr(state.drivers),byId={};
-   cur.forEach(function(d){if(!d)return;byId[d.id]=d;entriesAtivas(d).forEach(function(e){e.del=true;e.at=ts;e.by=DEV});notesAtivas(d).forEach(function(n){n.del=true;n.at=ts;n.by=DEV})});
-   _active(w.drivers).forEach(function(sd){
-    var d=byId[sd.id];
-    if(!d){d={id:sd.id||uid(),name:sd.name||'',car:sd.car||'',color:sd.color||'',plate:sd.plate||'',ord:Number(sd.ord)||0,fm:{},at:ts,by:DEV,del:false,entries:[],notes:[]};state.drivers.push(d);byId[d.id]=d}
-    d.del=false;d.name=sd.name||d.name||'';d.car=sd.car||d.car||'';d.color=sd.color||d.color||'';d.plate=sd.plate||d.plate||'';if(Number(sd.ord)||0)d.ord=Number(sd.ord)||0;
-    d.entries=toArr(d.entries);d.notes=toArr(d.notes);
-    entriesAtivas(sd).forEach(function(e){d.entries.push({id:uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),at:ts,by:DEV,del:false})});
-    notesAtivas(sd).forEach(function(n){d.notes.push({id:uid(),t:n.t||'',at:ts,by:DEV,del:false})});
-    _mark(d);
+ var ultimo=histOrdenado()[0];if(!ultimo||ultimo.id!==w.id){toast('⚠️ Só a semana fechada mais recente pode ser reaberta.');return}
+ ask('Reabrir semana '+w.week,'A reabertura é feita diretamente na nuvem. Ela só será permitida se a semana atual ainda não tiver nenhum lançamento real. Assim nenhum valor da semana seguinte pode ser perdido.','Reabrir semana',function(){
+  var ts=_ag(),wid=w.id;
+  _critTxn('Reabrir semana',function(base){
+   var wb=_histAtivoEstado(base).filter(function(x){return x.id===wid})[0];if(!wb)return 'Esse fechamento já foi alterado no outro aparelho.';
+   var ult=_histMaisRecenteEstado(base);if(!ult||ult.id!==wid)return 'Outro fechamento mais recente já existe.';
+   if(_temMovimentoEstado(base))return 'A semana atual já possui lançamentos. Reabertura bloqueada para não perder dinheiro.';
+   /* elimina somente as linhas da semana atual e restaura o snapshot com NOVOS ids;
+      os tombstones antigos de rollover nunca podem apagar a restauração. */
+   _ativosDoEstado(base).forEach(function(d){entriesAtivas(d).forEach(function(e){e.del=true;e.delReason='period-replace';e.at=ts;e.by=DEV});notesAtivas(d).forEach(function(n){n.del=true;n.delReason='period-replace';n.at=ts;n.by=DEV})});
+   var by={};toArr(base.drivers).forEach(function(d){if(d)by[d.id]=d});
+   _active(wb.drivers).forEach(function(sd){
+    var d=by[sd.id];if(!d){d={id:sd.id||uid(),name:sd.name||'',car:sd.car||'',color:sd.color||'',plate:sd.plate||'',ord:Number(sd.ord)||0,fm:{},at:ts,by:DEV,del:false,entries:[],notes:[]};base.drivers.push(d);by[d.id]=d}
+    d.del=false;d.entries=toArr(d.entries);d.notes=toArr(d.notes);
+    entriesAtivas(sd).forEach(function(e,i){d.entries.push({id:'reopen_'+wid+'_'+String(d.id)+'_'+i+'_'+ts,v:Number(e.v)||0,d:e.d||'',s:e.s==='paid'?'paid':'pend',at:ts,by:DEV,del:false,delReason:'',originCloseId:wid})});
+    notesAtivas(sd).forEach(function(n,i){d.notes.push({id:'reopen_note_'+wid+'_'+String(d.id)+'_'+i+'_'+ts,t:n.t||'',at:ts,by:DEV,del:false,delReason:'',originCloseId:wid})});d.at=ts;d.by=DEV;
    });
-   state.week=w.week;state.weekAt=ts;filter='all';_tombstoneReabertura(w,ts);
-  }
-  _lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();
-  document.getElementById('ovHist').classList.remove('open');render();
-  toast('↩ Semana '+state.week+' reaberta e restaurada');
+   wb.del=true;wb.delReason='reopen';wb.at=ts;wb.by=DEV;wb.periodKey='reopened:'+wid+':'+ts;
+   base.week=wb.week;base.weekAt=ts;return true;
+  },'↩ Semana '+w.week+' reaberta com segurança');
  });
 }
-function delHist(id){var w=histAtivo().filter(function(x){return x.id===id})[0];if(!w)return;ask('Excluir do histórico','Excluir a semana '+w.week+' ('+fmt(w.all)+') do histórico? Isso não pode ser desfeito.','Excluir',function(){w.del=true;_mark(w);_lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();openHistory();toast('Semana excluída do histórico')})}
+function delHist(id){
+ if(LOCK){toast('🔒 Destrave a edição antes de excluir histórico');return}
+ var w=histAtivo().filter(function(x){return x.id===id})[0];if(!w)return;
+ ask('Excluir do histórico','Excluir a semana '+w.week+' ('+fmt(w.all)+') do histórico? A exclusão será sincronizada de forma atômica.','Excluir',function(){
+  var ts=_ag(),wid=w.id;
+  _critTxn('Excluir histórico',function(base){var wb=_histAtivoEstado(base).filter(function(x){return x.id===wid})[0];if(!wb)return 'Esse registro já não existe na nuvem.';wb.del=true;wb.delReason='user-delete';wb.at=ts;wb.by=DEV;return true},'Semana excluída do histórico ✓');
+ });
+}
 
 /* ---------- Backup ---------- */
 function exportBackup(){var now=new Date(),name='backup-semanal-'+now.getFullYear()+('0'+(now.getMonth()+1)).slice(-2)+('0'+now.getDate()).slice(-2)+'.json';var limpo=norm(state);limpo.drivers=driversAtivos().map(function(d){var c=JSON.parse(JSON.stringify(d));c.entries=entriesAtivas(c);c.notes=notesAtivas(c);return c});limpo.history=histOrdenado();var json=JSON.stringify(limpo,null,1),blob=new Blob([json],{type:'application/json'}),file;try{file=new File([blob],name,{type:'application/json'})}catch(e){}if(file&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file]}).catch(function(){downloadBlob(blob,name)})}else downloadBlob(blob,name)}
@@ -1125,7 +1172,7 @@ function toast(msg){
  var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
  setTimeout(function(){t.classList.remove('show')},2200);
 }
-document.getElementById('weekLabel').addEventListener('input',function(){state.week=this.value;state.weekAt=_ag();save()});
+document.getElementById('weekLabel').addEventListener('click',function(){toast('🔒 A semana é controlada pelo fechamento/reabertura para evitar conflito entre aparelhos')});
 
 /* ================= SINCRONIZAÇÃO (Firebase Realtime Database) ================= */
 var DEV=(function(){try{var d=localStorage.getItem('guimas_dev');if(!d){d=uid()+uid();localStorage.setItem('guimas_dev',d)}return d}catch(e){return uid()}})();
@@ -1167,10 +1214,10 @@ function toArr(x){
 function norm(s){
  if(!s||typeof s!=='object')s={};var o={week:(typeof s.week==='string'?s.week:''),weekAt:Number(s.weekAt)||0,resetAt:Number(s.resetAt)||0,rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
  toArr(s.drivers).forEach(function(d){if(!d)return;var dd={id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',ord:Number(d.ord)||0,fm:(d.fm&&typeof d.fm==='object'?JSON.parse(JSON.stringify(d.fm)):{}),at:Number(d.at)||0,by:d.by||'',del:!!d.del,entries:[],notes:[]};
-  toArr(d.entries).forEach(function(e){if(e)dd.entries.push({id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),at:Number(e.at)||0,by:e.by||'',del:!!e.del})});
-  toArr(d.notes).forEach(function(n){if(n)dd.notes.push({id:n.id||uid(),t:n.t||'',at:Number(n.at)||0,by:n.by||'',del:!!n.del})});o.drivers.push(dd)
+  toArr(d.entries).forEach(function(e){if(e)dd.entries.push({id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),at:Number(e.at)||0,by:e.by||'',del:!!e.del,delReason:e.delReason||'',originCloseId:e.originCloseId||''})});
+  toArr(d.notes).forEach(function(n){if(n)dd.notes.push({id:n.id||uid(),t:n.t||'',at:Number(n.at)||0,by:n.by||'',del:!!n.del,delReason:n.delReason||'',originCloseId:n.originCloseId||''})});o.drivers.push(dd)
  });
- toArr(s.history).forEach(function(w){if(!w)return;var hh={id:w.id||uid(),periodKey:w.periodKey||_periodKey(w.week,w.closedAt),week:w.week||'',closedAt:w.closedAt||'',paid:w.paid||0,pend:w.pend||0,all:w.all||0,carried:(typeof w.carried==='number'?w.carried:undefined),text:w.text||'',drivers:toArr(w.drivers),at:Number(w.at)||0,by:w.by||'',del:!!w.del};o.history.push(hh)});return o;
+ toArr(s.history).forEach(function(w){if(!w)return;var hh={id:w.id||uid(),periodKey:w.periodKey||_periodKey(w.week,w.closedAt),week:w.week||'',closedAt:w.closedAt||'',paid:w.paid||0,pend:w.pend||0,all:w.all||0,carried:(typeof w.carried==='number'?w.carried:undefined),text:w.text||'',drivers:toArr(w.drivers),at:Number(w.at)||0,by:w.by||'',del:!!w.del,delReason:w.delReason||''};o.history.push(hh)});return o;
 }
 function syncCfg(){try{return JSON.parse(localStorage.getItem('guimas_sync')||'null')}catch(e){return null}}
 
