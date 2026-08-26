@@ -505,7 +505,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=26; var APP_DATE='25/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=27; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -703,6 +703,28 @@ function driversAtivos(){return _ordenaDrivers(state.drivers)}
 function entriesAtivas(d){return _active(d&&d.entries)}
 function notesAtivas(d){return _active(d&&d.notes)}
 function histAtivo(){return _active(state.history)}
+/* Histórico é exibido pela COMPETÊNCIA real da semana, nunca por at/by/id.
+   A sincronização pode reorganizar o array internamente para convergir entre aparelhos;
+   isso não deve vazar para a ordem visual que Fábio usa. */
+function _histChaveCronologica(w){
+ var wk=String(w&&w.week||'').trim().split('/'),d=parseInt(wk[0],10),m=parseInt(wk[1],10);
+ if(!isNaN(d)&&!isNaN(m)&&d>=1&&d<=31&&m>=1&&m<=12){
+  var y=_weekYear(w&&w.week,w&&w.closedAt);return y*10000+m*100+d;
+ }
+ /* fallback para registros antigos/malformados: usa a data de fechamento */
+ var cp=String(w&&w.closedAt||'').trim().split('/'),cd=parseInt(cp[0],10),cm=parseInt(cp[1],10),cy=parseInt(cp[2],10);
+ if(!isNaN(cy)&&!isNaN(cm)&&!isNaN(cd))return cy*10000+cm*100+cd;
+ return 0;
+}
+function histOrdenado(){
+ return histAtivo().slice().sort(function(a,b){
+  var ka=_histChaveCronologica(a),kb=_histChaveCronologica(b);
+  if(ka!==kb)return kb-ka; /* semana mais recente primeiro, como no Semanal antigo */
+  var ca=String(a&&a.closedAt||''),cb=String(b&&b.closedAt||'');
+  if(ca!==cb)return cb.localeCompare(ca);
+  return String(a&&a.id||'').localeCompare(String(b&&b.id||''));
+ });
+}
 
 /* ---------- Dados iniciais (semana 08/07, placas completas) ---------- */
 function seed(){ return {week:'',weekAt:0,resetAt:0,history:[],drivers:[]}; }
@@ -906,7 +928,7 @@ function closeWeek(){
 
 /* ---------- Histórico ---------- */
 function openHistory(){
- var el=document.getElementById('histList'),h=histAtivo().slice().sort(function(a,b){return (Number(b.at)||0)-(Number(a.at)||0)});if(!h.length){el.innerHTML='<div class="empty">Nenhuma semana fechada ainda.<br>Use "Fechar semana" no menu ao fim de cada semana.</div>'}else{el.innerHTML=h.map(function(w){return '<div class="histItem" id="h-'+w.id+'"><div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div><div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+(w.carried!==undefined?' · Levado p/ semana seguinte '+fmt(w.carried):' · Pendente '+fmt(w.pend))+'</div></div><div class="tt">'+fmt(w.all)+'</div></div><div class="acts"><button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button><button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button><button class="mini" onclick="openHistEdit(\''+w.id+'\')">✏️ Editar</button><button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div><pre>'+esc(w.text)+'</pre></div>'}).join('')}document.getElementById('ovHist').classList.add('open');
+ var el=document.getElementById('histList'),h=histOrdenado();if(!h.length){el.innerHTML='<div class="empty">Nenhuma semana fechada ainda.<br>Use "Fechar semana" no menu ao fim de cada semana.</div>'}else{el.innerHTML=h.map(function(w){return '<div class="histItem" id="h-'+w.id+'"><div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div><div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+(w.carried!==undefined?' · Levado p/ semana seguinte '+fmt(w.carried):' · Pendente '+fmt(w.pend))+'</div></div><div class="tt">'+fmt(w.all)+'</div></div><div class="acts"><button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button><button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button><button class="mini" onclick="openHistEdit(\''+w.id+'\')">✏️ Editar</button><button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div><pre>'+esc(w.text)+'</pre></div>'}).join('')}document.getElementById('ovHist').classList.add('open');
 }
 var EH_ID=null;
 function openHistEdit(id){
@@ -940,7 +962,7 @@ function copyHist(id){
 function delHist(id){var w=histAtivo().filter(function(x){return x.id===id})[0];if(!w)return;ask('Excluir do histórico','Excluir a semana '+w.week+' ('+fmt(w.all)+') do histórico? Isso não pode ser desfeito.','Excluir',function(){w.del=true;_mark(w);_lastUserBusinessSig=_businessSig(state);touch();persist(true);schedulePush();openHistory();toast('Semana excluída do histórico')})}
 
 /* ---------- Backup ---------- */
-function exportBackup(){var now=new Date(),name='backup-semanal-'+now.getFullYear()+('0'+(now.getMonth()+1)).slice(-2)+('0'+now.getDate()).slice(-2)+'.json';var limpo=norm(state);limpo.drivers=driversAtivos().map(function(d){var c=JSON.parse(JSON.stringify(d));c.entries=entriesAtivas(c);c.notes=notesAtivas(c);return c});limpo.history=histAtivo();var json=JSON.stringify(limpo,null,1),blob=new Blob([json],{type:'application/json'}),file;try{file=new File([blob],name,{type:'application/json'})}catch(e){}if(file&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file]}).catch(function(){downloadBlob(blob,name)})}else downloadBlob(blob,name)}
+function exportBackup(){var now=new Date(),name='backup-semanal-'+now.getFullYear()+('0'+(now.getMonth()+1)).slice(-2)+('0'+now.getDate()).slice(-2)+'.json';var limpo=norm(state);limpo.drivers=driversAtivos().map(function(d){var c=JSON.parse(JSON.stringify(d));c.entries=entriesAtivas(c);c.notes=notesAtivas(c);return c});limpo.history=histOrdenado();var json=JSON.stringify(limpo,null,1),blob=new Blob([json],{type:'application/json'}),file;try{file=new File([blob],name,{type:'application/json'})}catch(e){}if(file&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file]}).catch(function(){downloadBlob(blob,name)})}else downloadBlob(blob,name)}
 function downloadBlob(blob,name){
  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
  document.body.appendChild(a);a.click();
