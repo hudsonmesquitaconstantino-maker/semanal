@@ -506,7 +506,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=33; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=35; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -519,19 +519,18 @@ function safeToReload(){
  return true;
 }
 var _updFound=false;
+function _updNavigate(nv){
+ try{
+  var u=new URL(location.href);u.searchParams.set('v',String(nv));u.searchParams.set('_upd',String(Date.now()));location.replace(u.href);
+ }catch(e){try{location.replace(location.pathname+'?v='+nv+'&_upd='+Date.now())}catch(e2){location.reload()}}
+}
 function checkUpdate(){
  try{
   fetch('index.html?upd='+Date.now(),{cache:'no-store'}).then(function(r){return r.text()}).then(function(t){
    var m=t.match(/APP_VER=(\d+)/);
    if(m&&parseInt(m[1],10)>APP_VER&&!_updFound){
-    _updFound=true;
-    var nv=parseInt(m[1],10);toast('⬆️ Atualizando para a v'+nv+'…');
-    setTimeout(function tryReload(){
-     if(safeToReload()){
-      try{document.open();document.write(t);document.close()}
-      catch(e){try{location.replace(location.pathname+'?v='+nv)}catch(e2){location.reload()}}
-     }else{setTimeout(tryReload,5000)}
-    },700);
+    _updFound=true;var nv=parseInt(m[1],10);toast('⬆️ Atualizando para a v'+nv+'…');
+    setTimeout(function tr(){if(safeToReload())_updNavigate(nv);else setTimeout(tr,5000)},700);
    }
   }).catch(function(){});
  }catch(e){}
@@ -1364,7 +1363,7 @@ function disableSync(){
 
 /* Modo offline permanente (ativa quando hospedado, ex.: GitHub Pages) */
 if('serviceWorker' in navigator){
- try{navigator.serviceWorker.register('./sw.js').catch(function(){})}catch(e){}
+ try{navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(function(r){try{r.update()}catch(e){}}).catch(function(){navigator.serviceWorker.register('./sw.js').catch(function(){})})}catch(e){}
 }
 
 load();

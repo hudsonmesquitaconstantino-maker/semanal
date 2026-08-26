@@ -1,30 +1,42 @@
-/* Offline permanente + atualizações automáticas — Semanal Guimas v6 */
-var CACHE='semanal-guimas-v7';
-self.addEventListener('install',function(e){
- e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(['./','./index.html'])}));
- self.skipWaiting();
+/* GuimasCar semanal — Service Worker seguro v35
+   HTML/navegação: NETWORK-FIRST. Cache é apenas fallback offline. */
+const CACHE='guimas-semanal-shell-v35';
+const PREFIX='guimas-semanal-shell-v';
+const INDEX=new URL('./index.html',self.registration.scope).href;
+
+self.addEventListener('install',event=>{
+  event.waitUntil((async()=>{
+    const c=await caches.open(CACHE);
+    try{const r=await fetch(INDEX,{cache:'no-store'});if(r&&r.ok)await c.put(INDEX,r.clone());}catch(e){}
+    await self.skipWaiting();
+  })());
 });
-self.addEventListener('activate',function(e){
- e.waitUntil(caches.keys().then(function(ks){
-  return Promise.all(ks.filter(function(k){return k!==CACHE}).map(function(k){return caches.delete(k)}));
- }));
- self.clients.claim();
+
+self.addEventListener('activate',event=>{
+  event.waitUntil((async()=>{
+    const ks=await caches.keys();
+    await Promise.all(ks.filter(k=>k.startsWith(PREFIX)&&k!==CACHE).map(k=>caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
-self.addEventListener('fetch',function(e){
- if(e.request.method!=='GET') return;                 // Firebase envia POST — deixar passar direto
- var u=new URL(e.request.url);
- var mine=(u.origin===location.origin);
- var cdn=(u.hostname==='www.gstatic.com');            // scripts do Firebase: cachear p/ offline
- if(!mine&&!cdn) return;                              // demais domínios (ex.: banco de dados) intocados
- e.respondWith(
-  fetch(e.request).then(function(res){
-   var clone=res.clone();
-   caches.open(CACHE).then(function(c){c.put(e.request,clone)});
-   return res;
-  }).catch(function(){
-   return caches.match(e.request,{ignoreSearch:true}).then(function(r){
-    return r||(mine?caches.match('./index.html'):Response.error());
-   });
-  })
- );
+
+function isHtml(req,url){
+  return req.mode==='navigate'||url.pathname.endsWith('/')||url.pathname.endsWith('/index.html');
+}
+
+self.addEventListener('fetch',event=>{
+  const req=event.request;if(req.method!=='GET')return;
+  const url=new URL(req.url);if(url.origin!==self.location.origin)return;
+  if(!isHtml(req,url))return;
+  event.respondWith((async()=>{
+    const c=await caches.open(CACHE);
+    try{
+      const fresh=await fetch(req,{cache:'no-store'});
+      if(fresh&&fresh.ok)await c.put(INDEX,fresh.clone());
+      return fresh;
+    }catch(e){
+      const hit=await c.match(INDEX);if(hit)return hit;
+      throw e;
+    }
+  })());
 });
