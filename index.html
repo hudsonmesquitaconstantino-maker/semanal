@@ -506,7 +506,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=35; var APP_DATE='26/08/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=36; var APP_DATE='08/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -639,12 +639,28 @@ function _mergeById(A,B,merger,keyFn){
 }
 function _mergeDriver(a,b){
  if(!a)return b;if(!b)return a;
- if(a.del||b.del){var tomb=a.del?a:b,live=a.del?b:a,novo=_latestChildAt(live);if(!(novo>Number(tomb.at)||0))return _newer(a,b);var rr=_mergeDriverRoot(live,tomb);rr.del=false;rr.entries=_mergeById(a.entries,b.entries,_mergeEntry);rr.notes=_mergeById(a.notes,b.notes,_mergeNote);rr.at=Math.max(Number(rr.at)||0,novo);return rr}
- var out=_mergeDriverRoot(a,b);out.del=false;out.entries=_mergeById(a.entries,b.entries,_mergeEntry);out.notes=_mergeById(a.notes,b.notes,_mergeNote);return out;
+ if(a.del||b.del){
+  var tomb=a.del?a:b,live=a.del?b:a,reason=String(tomb.delReason||'');
+  /* Exclusão manual do motorista é definitiva. Um iPhone atrasado não pode
+     ressuscitá-lo só porque ainda possui um lançamento antigo com timestamp maior. */
+  if(reason==='user-delete')return tomb;
+  var novo=_latestChildAt(live);if(!(novo>Number(tomb.at)||0))return _newer(a,b);
+  var rr=_mergeDriverRoot(live,tomb);rr.del=false;rr.delReason='';rr.entries=_mergeById(a.entries,b.entries,_mergeEntry);rr.notes=_mergeById(a.notes,b.notes,_mergeNote);rr.at=Math.max(Number(rr.at)||0,novo);return rr
+ }
+ var out=_mergeDriverRoot(a,b);out.del=false;out.delReason='';out.entries=_mergeById(a.entries,b.entries,_mergeEntry);out.notes=_mergeById(a.notes,b.notes,_mergeNote);return out;
 }
 function _histRecalc(w){
- if(!w||w.del)return w;var ds=_active(w.drivers).map(function(d){var c=JSON.parse(JSON.stringify(d));c.entries=_active(c.entries);c.notes=_active(c.notes);return c});
- var tt=totals(ds);w.drivers=ds;w.paid=tt.paid;w.pend=tt.pend;w.all=tt.paid;w.carried=tt.pend;w.text=buildText(ds,w.week);return w;
+ if(!w||w.del)return w;
+ /* IMPORTANTE: não remova tombstones de w.drivers. Eles são a prova sincronizada
+    de que um lançamento foi apagado e impedem outro iPhone de ressuscitá-lo. */
+ w.drivers=toArr(w.drivers);
+ var tt=totals(w.drivers),hadCarried=(typeof w.carried==='number');
+ w.paid=tt.paid;w.pend=tt.pend;w.all=tt.paid;
+ /* Fechamentos novos gravam carried explicitamente (normalmente 0).
+    Só registros realmente antigos, sem esse campo, herdam o pendente legado. */
+ if(!hadCarried)w.carried=tt.pend;
+ w.text=buildText(w.drivers,w.week,tt.paid);
+ return w;
 }
 function _mergeHist(a,b){
  if(!a)return b;if(!b)return a;if(a.del||b.del)return _newer(a,b);
@@ -685,6 +701,35 @@ function _limparFechamentosFantasma26Em(s){
  return n;
 }
 
+/* REPARO CIRÚRGICO v36 — fechamento de 02/09/2026.
+   O usuário confirmou em 08/09/2026 que os dois pendentes somando R$1.620,00
+   (R$1.000 + R$620) foram lançados por engano, foram apagados, NÃO foram levados
+   à semana seguinte e o recebido correto da semana é R$21.601,00.
+   A assinatura abaixo é deliberadamente exata para não tocar em outra semana. */
+function _repararFechamento0209Em(s){
+ if(!s||!Array.isArray(s.history))return 0;
+ var ts=_ag(),mud=0;
+ s.history.forEach(function(w){
+  if(!w||w.del)return;
+  if(String(w.week||'').trim()!=='02/09')return;
+  if(String(w.closedAt||'').trim()!=='08/09/2026')return;
+  var tt=totals(w.drivers);
+  if((Number(w.paid)||0)!==2160100)return;
+  if(tt.paid!==2160100||tt.pend!==162000)return;
+  /* Sepulta exatamente os pendentes que compõem os R$1.620,00.
+     Mantemos tombstones dentro do histórico para nenhum outro iPhone ressuscitá-los. */
+  _active(w.drivers).forEach(function(d){
+   entriesAtivas(d).forEach(function(e){
+    if(e.s!=='pend')return;
+    e.del=true;e.delReason='user-delete';e.at=ts;e.by=DEV;mud++;
+   });
+  });
+  w.carried=0;w.at=ts;w.by=DEV;
+  _histRecalc(w);
+ });
+ return mud;
+}
+
 function _mergeState(a,b){
  a=norm(a||{});b=norm(b||{});var reset=Math.max(Number(a.resetAt)||0,Number(b.resetAt)||0);
  function clip(s){if(!reset)return s;var ds=[];toArr(s.drivers).forEach(function(d){if(!d)return;var c=JSON.parse(JSON.stringify(d));c.entries=toArr(c.entries).filter(function(e){return (Number(e&&e.at)||0)>=reset});c.notes=toArr(c.notes).filter(function(n){return (Number(n&&n.at)||0)>=reset});var raiz=(Number(c.at)||0)>=reset;if(raiz||c.entries.length||c.notes.length)ds.push(c)});s.drivers=ds;s.history=toArr(s.history).filter(function(w){return (Number(w&&w.at)||0)>=reset});return s}
@@ -707,7 +752,7 @@ function _mergeState(a,b){
      registro da semana fechada já tiver chegado. Isso elimina o "tudo pago". */
  }
  out.resetAt=reset;if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
- out.rev=Math.max(Number(a.rev)||0,Number(b.rev)||0);out.dev=(Number(b.rev)||0)>(Number(a.rev)||0)?b.dev:((Number(b.rev)||0)<(Number(a.rev)||0)?a.dev:(String(b.dev||'')>String(a.dev||'')?b.dev:a.dev));_limparFechamentosFantasma26Em(out);return norm(out);
+ out.rev=Math.max(Number(a.rev)||0,Number(b.rev)||0);out.dev=(Number(b.rev)||0)>(Number(a.rev)||0)?b.dev:((Number(b.rev)||0)<(Number(a.rev)||0)?a.dev:(String(b.dev||'')>String(a.dev||'')?b.dev:a.dev));_limparFechamentosFantasma26Em(out);_repararFechamento0209Em(out);return norm(out);
 }
 
 /* Ordem operacional histórica do Semanal. O merge distribuído ordena internamente
@@ -892,14 +937,30 @@ function valInput(inp,did,eid){var e=findE(findD(did),eid);if(!e)return;e.v=pars
 function valBlur(inp,did,eid){var e=findE(findD(did),eid);if(!e)return;e.v=parseVal(inp.value);_mark(e);inp.value=fmt(e.v);inp.classList.toggle('neg',e.v<0);updateTotals();save()}
 function tgl(did,eid){if(LOCK){toast('🔒 Travado — toque no cadeado para liberar');return}var e=findE(findD(did),eid);if(!e)return;e.s=(e.s==='paid'?'pend':'paid');_mark(e);save();render()}
 function addEnt(did){var d=findD(did);if(!d)return;var e={id:uid(),v:0,d:'',s:'pend',at:_ag(),by:DEV,del:false};d.entries.push(e);_mark(d);save();render()}
+function _persistDeleteNow(msg){
+ /* Exclusão é operação financeira importante: grava local imediatamente e,
+    se houver internet, dispara a transação de sync sem esperar o debounce comum. */
+ _lastUserBusinessSig=_businessSig(state);touch();persist(true);render();
+ clearTimeout(saveTimer);clearTimeout(SYNC.pushTimer);
+ if(SYNC.ref&&SYNC.gotRemote&&SYNC.online){setTimeout(push,0)}
+ else{SYNC.pendingPush=true;schedulePush()}
+ toast(msg);
+}
 function delEnt(did,eid){
  var d=findD(did),e=findE(d,eid);if(!d||!e)return;
- ask('Excluir lançamento','Excluir o lançamento de '+fmt(e.v)+(e.d?' ('+e.d+')':'')+' de '+(d.name||'este motorista')+'?','Excluir',function(){e.del=true;_mark(e);_mark(d);save();render();toast('Lançamento excluído')});
+ ask('Excluir lançamento','Excluir o lançamento de '+fmt(e.v)+(e.d?' ('+e.d+')':'')+' de '+(d.name||'este motorista')+'?','Excluir',function(){
+  e.del=true;e.delReason='user-delete';_mark(e);_mark(d);_persistDeleteNow('Lançamento excluído');
+ });
 }
 function addNote(did){var d=findD(did);if(!d)return;d.notes.push({id:uid(),t:'',at:_ag(),by:DEV,del:false});_mark(d);save();render()}
-function delNote(did,nid){var d=findD(did);if(!d)return;var n=notesAtivas(d).filter(function(x){return x.id===nid})[0];if(!n)return;n.del=true;_mark(n);_mark(d);save();render();toast('Observação excluída')}
-function addDriver(){var n=_ag();state.drivers.push({id:uid(),name:'',car:'',color:'',plate:'',ord:n,fm:{name:{at:n,by:DEV},car:{at:n,by:DEV},color:{at:n,by:DEV},plate:{at:n,by:DEV}},entries:[{id:uid(),v:0,d:'',s:'pend',at:n,by:DEV,del:false}],notes:[],at:n,by:DEV,del:false});save();render();window.scrollTo(0,document.body.scrollHeight)}
-function delDriver(did){var d=findD(did);if(!d)return;ask('Remover motorista','Remover '+(d.name||'este motorista')+(d.plate?' ('+d.plate+')':'')+' e todos os lançamentos dele desta semana?','Remover',function(){d.del=true;_mark(d);entriesAtivas(d).forEach(function(e){e.del=true;_mark(e)});notesAtivas(d).forEach(function(n){n.del=true;_mark(n)});save();render();toast('Motorista removido')})}
+function delNote(did,nid){var d=findD(did);if(!d)return;var n=notesAtivas(d).filter(function(x){return x.id===nid})[0];if(!n)return;n.del=true;n.delReason='user-delete';_mark(n);_mark(d);_persistDeleteNow('Observação excluída')}
+function addDriver(){var n=_ag();state.drivers.push({id:uid(),name:'',car:'',color:'',plate:'',ord:n,fm:{name:{at:n,by:DEV},car:{at:n,by:DEV},color:{at:n,by:DEV},plate:{at:n,by:DEV}},entries:[{id:uid(),v:0,d:'',s:'pend',at:n,by:DEV,del:false}],notes:[],at:n,by:DEV,del:false,delReason:''});save();render();window.scrollTo(0,document.body.scrollHeight)}
+function delDriver(did){var d=findD(did);if(!d)return;ask('Remover motorista','Remover '+(d.name||'este motorista')+(d.plate?' ('+d.plate+')':'')+' e todos os lançamentos dele desta semana?','Remover',function(){
+ entriesAtivas(d).forEach(function(e){e.del=true;e.delReason='user-delete';_mark(e)});
+ notesAtivas(d).forEach(function(n){n.del=true;n.delReason='user-delete';_mark(n)});
+ d.del=true;d.delReason='user-delete';_mark(d); /* motorista por último: tombstone mais novo que os filhos */
+ _persistDeleteNow('Motorista removido');
+})}
 
 /* ---------- Pagamento parcial ---------- */
 var PART={did:null,eid:null};
@@ -928,8 +989,10 @@ function confirmPartial(){
 }
 
 /* ---------- Texto WhatsApp ---------- */
-function buildText(drivers,week){
- var blocks=[];_ordenaDrivers(drivers).forEach(function(d){var head=[d.name,d.car,d.color,d.plate].filter(function(x){return x&&x.trim()}).join(' | ');if(!head)return;var lines=['*'+head+'*'];entriesAtivas(d).forEach(function(e){lines.push(fmt(e.v)+(e.d&&e.d.trim()?' '+e.d.trim():'')+' '+(e.s==='paid'?'✅':'❌'))});notesAtivas(d).forEach(function(n){if(n.t&&n.t.trim())lines.push(n.t.trim())});blocks.push(lines.join('\n'))});var tt=totals(drivers);return '*SEMANAL - '+week+'*\n\n\n'+blocks.join('\n\n\n')+'\n\n\n*TOTAL SEMANAL - '+fmt(tt.all)+'*';
+function buildText(drivers,week,totalOverride){
+ var blocks=[];_ordenaDrivers(drivers).forEach(function(d){var head=[d.name,d.car,d.color,d.plate].filter(function(x){return x&&x.trim()}).join(' | ');if(!head)return;var lines=['*'+head+'*'];entriesAtivas(d).forEach(function(e){lines.push(fmt(e.v)+(e.d&&e.d.trim()?' '+e.d.trim():'')+' '+(e.s==='paid'?'✅':'❌'))});notesAtivas(d).forEach(function(n){if(n.t&&n.t.trim())lines.push(n.t.trim())});blocks.push(lines.join('\n'))});
+ var tt=totals(drivers),total=(typeof totalOverride==='number'?totalOverride:tt.all);
+ return '*SEMANAL - '+week+'*\n\n\n'+blocks.join('\n\n\n')+'\n\n\n*TOTAL SEMANAL - '+fmt(total)+'*';
 }
 function openWhats(){
  document.getElementById('whatsText').textContent=buildText(state.drivers,state.week);
@@ -1003,7 +1066,7 @@ function closeWeek(){
    if(base.week!==semana)return 'Outro aparelho mudou a semana para '+base.week+'. Revise antes de fechar.';
    if(_histAtivoEstado(base).some(function(w){return (w.periodKey||_periodKey(w.week,w.closedAt))===pk}))return 'A semana '+semana+' já aparece fechada na nuvem.';
    var ativos=_ativosDoEstado(base),t=totals(ativos),snap=JSON.parse(JSON.stringify(ativos));
-   base.history.unshift({id:closeId,periodKey:pk,week:semana,closedAt:stamp,paid:t.paid,pend:t.pend,all:t.paid,carried:0,text:buildText(snap,semana),drivers:snap,at:ts,by:DEV,del:false,delReason:''});
+   base.history.unshift({id:closeId,periodKey:pk,week:semana,closedAt:stamp,paid:t.paid,pend:t.pend,all:t.paid,carried:0,text:buildText(snap,semana,t.paid),drivers:snap,at:ts,by:DEV,del:false,delReason:''});
    ativos.forEach(function(d){
     entriesAtivas(d).forEach(function(e){e.del=true;e.delReason='rollover';e.at=ts;e.by=DEV});
     notesAtivas(d).forEach(function(n){n.del=true;n.delReason='rollover';n.at=ts;n.by=DEV});
@@ -1018,7 +1081,8 @@ function closeWeek(){
 
 /* ---------- Histórico ---------- */
 function openHistory(){
- var _n26=_limparFechamentosFantasma26Em(state);if(_n26){touch();persist(true);schedulePush()}
+ var _n26=_limparFechamentosFantasma26Em(state),_n0209=_repararFechamento0209Em(state);
+ if(_n26||_n0209){touch();persist(true);schedulePush()}
  var el=document.getElementById('histList'),h=histOrdenado();if(!h.length){el.innerHTML='<div class="empty">Nenhuma semana fechada ainda.<br>Use "Fechar semana" no menu ao fim de cada semana.</div>'}else{el.innerHTML=h.map(function(w){return '<div class="histItem" id="h-'+w.id+'"><div class="top"><div><div class="lbl">SEMANAL – '+esc(w.week)+'</div><div class="sub">Fechada em '+esc(w.closedAt)+' · Recebido '+fmt(w.paid)+(w.carried!==undefined?' · Levado p/ semana seguinte '+fmt(w.carried):' · Pendente '+fmt(w.pend))+'</div></div><div class="tt">'+fmt(w.all)+'</div></div><div class="acts"><button class="mini" onclick="document.getElementById(\'h-'+w.id+'\').classList.toggle(\'open\')">👁 Ver</button><button class="mini" onclick="copyHist(\''+w.id+'\')">📋 Copiar</button><button class="mini" onclick="openHistEdit(\''+w.id+'\')">✏️ Editar</button><button class="mini" onclick="reopenHist(\''+w.id+'\')">'+(_reparo26BugAtual(w)?'🧹 Corrigir 26/08':'↩ Reabrir')+'</button><button class="mini danger" onclick="delHist(\''+w.id+'\')">Excluir</button></div><pre>'+esc(w.text)+'</pre></div>'}).join('')}document.getElementById('ovHist').classList.add('open');
 }
 var EH_ID=null;
@@ -1212,7 +1276,7 @@ function toArr(x){
 }
 function norm(s){
  if(!s||typeof s!=='object')s={};var o={week:(typeof s.week==='string'?s.week:''),weekAt:Number(s.weekAt)||0,resetAt:Number(s.resetAt)||0,rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
- toArr(s.drivers).forEach(function(d){if(!d)return;var dd={id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',ord:Number(d.ord)||0,fm:(d.fm&&typeof d.fm==='object'?JSON.parse(JSON.stringify(d.fm)):{}),at:Number(d.at)||0,by:d.by||'',del:!!d.del,entries:[],notes:[]};
+ toArr(s.drivers).forEach(function(d){if(!d)return;var dd={id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',ord:Number(d.ord)||0,fm:(d.fm&&typeof d.fm==='object'?JSON.parse(JSON.stringify(d.fm)):{}),at:Number(d.at)||0,by:d.by||'',del:!!d.del,delReason:d.delReason||'',entries:[],notes:[]};
   toArr(d.entries).forEach(function(e){if(e)dd.entries.push({id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),at:Number(e.at)||0,by:e.by||'',del:!!e.del,delReason:e.delReason||'',originCloseId:e.originCloseId||''})});
   toArr(d.notes).forEach(function(n){if(n)dd.notes.push({id:n.id||uid(),t:n.t||'',at:Number(n.at)||0,by:n.by||'',del:!!n.del,delReason:n.delReason||'',originCloseId:n.originCloseId||''})});o.drivers.push(dd)
  });
@@ -1363,16 +1427,16 @@ function disableSync(){
 
 /* Modo offline permanente (ativa quando hospedado, ex.: GitHub Pages) */
 if('serviceWorker' in navigator){
- try{navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(function(r){try{r.update()}catch(e){}}).catch(function(){navigator.serviceWorker.register('./sw.js').catch(function(){})})}catch(e){}
+ try{navigator.serviceWorker.register('./SW.js',{updateViaCache:'none'}).then(function(r){try{r.update()}catch(e){}}).catch(function(){navigator.serviceWorker.register('./SW.js').catch(function(){})})}catch(e){}
 }
 
 load();
-var _fix26Boot=_limparFechamentosFantasma26Em(state);
-if(_fix26Boot){touch();persist(true)}
+var _fix26Boot=_limparFechamentosFantasma26Em(state),_fix0209Boot=_repararFechamento0209Em(state);
+if(_fix26Boot||_fix0209Boot){touch();persist(true)}
 try{_lastPersistRaw=JSON.stringify(state);_lastUserBusinessSig=_businessSig(state)}catch(e){}
 _setSaved('Salvo ✓');render();
 try{startSync()}catch(e){}
-if(_fix26Boot)schedulePush();
+if(_fix26Boot||_fix0209Boot)schedulePush();
 </script>
 </body>
 </html>
