@@ -474,9 +474,9 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
     <div class="askMsg">O Semanal deste iPhone está diferente da cópia salva na nuvem. Para não perder dinheiro, o app não vai misturar os dois automaticamente.</div>
     <div id="syncConflictLocal" class="pprev" style="margin:10px 0"></div>
     <div id="syncConflictCloud" class="pprev" style="margin:10px 0"></div>
-    <button class="btn primary" onclick="resolverSyncUsarLocal()">Usar ESTE iPhone como correto</button>
-    <button class="btn ghost" style="margin-top:8px" onclick="resolverSyncUsarNuvem()">Usar os dados da NUVEM</button>
-    <div class="askMsg" style="margin-top:10px">Escolha somente no aparelho que você sabe que está correto. Depois, o outro aparelho receberá essa versão.</div>
+    <button id="syncUseLocal" class="btn primary" onclick="resolverSyncUsarLocal()">Usar ESTE iPhone como correto</button>
+    <button id="syncUseCloud" class="btn ghost" style="margin-top:8px" onclick="resolverSyncUsarNuvem()">Usar os dados da NUVEM</button>
+    <div id="syncConflictStatus" class="askMsg" style="margin-top:10px">Escolha somente no aparelho que você sabe que está correto. Depois, o outro aparelho receberá essa versão.</div>
   </div>
 </div>
 
@@ -518,7 +518,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=37; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=38; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -1256,9 +1256,10 @@ document.getElementById('weekLabel').addEventListener('click',function(){toast('
 
 /* ================= SINCRONIZAÇÃO (Firebase Realtime Database) ================= */
 var DEV=(function(){try{var d=localStorage.getItem('guimas_dev');if(!d){d=uid()+uid();localStorage.setItem('guimas_dev',d)}return d}catch(e){return uid()}})();
-var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false,gotRemote:false,lastToastAt:0,remoteLast:null,localDirty:false,conflict:null,resolving:false};
-var DIRTY_KEY='guimas_semanal_dirty_v37',RESOLVED_KEY='guimas_semanal_sync_v37_resolved';
+var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false,gotRemote:false,lastToastAt:0,remoteLast:null,localDirty:false,conflict:null,resolving:false,pendingResolution:''};
+var DIRTY_KEY='guimas_semanal_dirty_v37',RESOLVED_KEY='guimas_semanal_sync_v37_resolved',PENDING_RESOLVE_KEY='guimas_semanal_resolve_v38';
 try{SYNC.localDirty=localStorage.getItem(DIRTY_KEY)==='1'}catch(e){}
+try{SYNC.pendingResolution=localStorage.getItem(PENDING_RESOLVE_KEY)||''}catch(e){}
 function _setDirty(v){SYNC.localDirty=!!v;try{localStorage.setItem(DIRTY_KEY,v?'1':'0')}catch(e){};_refreshSyncPill()}
 function _refreshSyncPill(){
  if(!SYNC.ref){setPill('','⚪ sem sync');return}
@@ -1267,6 +1268,37 @@ function _refreshSyncPill(){
  var igual=SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast);
  if(SYNC.localDirty||SYNC.pendingPush||!igual){setPill('wait','🟡 sincronizando…');return}
  setPill('on','🟢 sincronizado');
+}
+function _syncResolutionStatus(txt,busy){
+ var el=document.getElementById('syncConflictStatus');
+ if(el)el.textContent=txt||'';
+ var a=document.getElementById('syncUseLocal'),b=document.getElementById('syncUseCloud');
+ if(a)a.disabled=!!busy;
+ if(b)b.disabled=!!busy;
+}
+function _guardarResolucaoPendente(tipo){
+ SYNC.pendingResolution=tipo||'';
+ try{
+  if(SYNC.pendingResolution)localStorage.setItem(PENDING_RESOLVE_KEY,SYNC.pendingResolution);
+  else localStorage.removeItem(PENDING_RESOLVE_KEY);
+ }catch(e){}
+}
+function _limparResolucaoPendente(){
+ _guardarResolucaoPendente('');
+}
+function _tentarResolucaoPendente(){
+ if(!SYNC.pendingResolution||SYNC.resolving)return;
+ if(!SYNC.ref){
+  _syncResolutionStatus('Escolha registrada. Aguardando o Firebase ficar disponível…',true);
+  return;
+ }
+ if(!SYNC.online){
+  _syncResolutionStatus('Escolha registrada. Aguardando conexão com a nuvem — não precisa apertar novamente.',true);
+  setPill('wait','🟡 aguardando nuvem…');
+  return;
+ }
+ if(SYNC.pendingResolution==='local')_resolverSyncLocalAgora();
+ else if(SYNC.pendingResolution==='cloud')_resolverSyncNuvemAgora();
 }
 
 /* Compara o CONTEÚDO sincronizado sem deixar rev/dev ou ordem de arrays criarem
@@ -1354,6 +1386,7 @@ function startSync(){
   firebase.database().ref('.info/connected').on('value',function(s){
    SYNC.online=!!s.val();
    _refreshSyncPill();
+   if(SYNC.online&&SYNC.pendingResolution){_tentarResolucaoPendente();return}
    if(SYNC.online&&SYNC.pendingPush&&!SYNC.conflict)push();
   });
  }).catch(function(err){
@@ -1413,6 +1446,11 @@ function _mostrarConflitoSync(local,rem){
 }
 function onRemote(v){
  if(!v)return;SYNC.gotRemote=true;var rem=norm(v);SYNC.remoteLast=rem;
+ if(SYNC.pendingResolution){
+  if(!SYNC.conflict)_mostrarConflitoSync(state,rem);
+  _tentarResolucaoPendente();
+  return;
+ }
  if(SYNC.conflict){_refreshSyncPill();return}
  var resolvido=false;try{resolvido=localStorage.getItem(RESOLVED_KEY)==='1'}catch(e){}
  /* Migração v36→v37: se há diferença funcional, NÃO adivinha. Se outro aparelho já
@@ -1445,44 +1483,106 @@ function adopt(v){
  _refreshSyncPill();
 }
 function resolverSyncUsarLocal(){
- if(!SYNC.conflict||!SYNC.ref||!SYNC.online||SYNC.resolving)return;
- SYNC.resolving=true;setPill('wait','🟡 gravando este iPhone…');
- var local=norm(SYNC.conflict.local),ag=_ag();
- SYNC.ref.transaction(function(cur){
-  var base=cur?norm(cur):norm({});
-  /* Escolha EXPLÍCITA do usuário: a semana corrente deste iPhone vira canônica.
-     Histórico continua sendo unido, para não apagar fechamentos legítimos. */
-  base.week=local.week;base.weekAt=Math.max(Number(local.weekAt)||0,ag);
-  base.drivers=JSON.parse(JSON.stringify(local.drivers));
-  base.history=_mergeHistoryList(base.history,local.history);
-  base.resetAt=Math.max(Number(base.resetAt)||0,Number(local.resetAt)||0);
-  base.syncEpochV37=ag;base.rev=Math.max(ag,Number(base.rev)||0,Number(local.rev)||0);base.dev=DEV;
-  return norm(base);
- },function(err,committed,snap){
-  SYNC.resolving=false;
-  if(err||!committed){toast('⛔ Não consegui definir este iPhone como fonte. Tente novamente com internet.');_refreshSyncPill();return}
-  var rem=norm(snap.val());state=rem;SYNC.remoteLast=rem;SYNC.conflict=null;SYNC.pendingPush=false;
-  persist(false);_lastUserBusinessSig=_businessSig(state);_setDirty(false);
-  try{localStorage.setItem(RESOLVED_KEY,'1')}catch(e){}
-  document.getElementById('ovSyncConflict').classList.remove('open');filter='all';render();_refreshSyncPill();
-  toast('✅ Este iPhone virou a fonte correta da semana');
- },false);
+ if(!SYNC.conflict){toast('⚠️ A divergência não está mais ativa. Aguarde a atualização da tela.');return}
+ _guardarResolucaoPendente('local');
+ _syncResolutionStatus('Escolha registrada: ESTE iPhone será a fonte correta. Preparando envio para a nuvem…',true);
+ setPill('wait','🟡 preparando correção…');
+ _tentarResolucaoPendente();
+}
+function _resolverSyncLocalAgora(){
+ if(SYNC.resolving||SYNC.pendingResolution!=='local')return;
+ if(!SYNC.ref||!SYNC.online){_tentarResolucaoPendente();return}
+ SYNC.resolving=true;
+ _syncResolutionStatus('Gravando ESTE iPhone na nuvem… Não feche o aplicativo.',true);
+ setPill('wait','🟡 gravando este iPhone…');
+ var local=norm(SYNC.conflict&&SYNC.conflict.local?SYNC.conflict.local:state),ag=_ag(),finished=false;
+ var timer=setTimeout(function(){
+  if(finished)return;
+  _syncResolutionStatus('Ainda aguardando confirmação da nuvem. A escolha já está registrada e será concluída automaticamente.',true);
+  setPill('wait','🟡 aguardando confirmação…');
+ },6000);
+ try{
+  SYNC.ref.transaction(function(cur){
+   var base=cur?norm(cur):norm({});
+   /* Escolha explícita: a semana corrente deste iPhone é canônica.
+      O histórico da nuvem é preservado e unido ao histórico local. */
+   base.week=local.week;
+   base.weekAt=Math.max(Number(local.weekAt)||0,ag);
+   base.drivers=JSON.parse(JSON.stringify(local.drivers));
+   base.history=_mergeHistoryList(base.history,local.history);
+   base.resetAt=Math.max(Number(base.resetAt)||0,Number(local.resetAt)||0);
+   base.syncEpochV37=Math.max(Number(base.syncEpochV37)||0,ag);
+   base.rev=Math.max(ag,Number(base.rev)||0,Number(local.rev)||0);
+   base.dev=DEV;
+   return norm(base);
+  },function(err,committed,snap){
+   finished=true;clearTimeout(timer);SYNC.resolving=false;
+   if(err||!committed||!snap||!snap.val()){
+    _syncResolutionStatus('Não houve confirmação da nuvem. A escolha continua registrada; o Semanal tentará novamente quando a conexão estabilizar.',true);
+    setPill('wait','🟡 aguardando nuvem…');
+    return;
+   }
+   var rem=norm(snap.val());
+   state=rem;SYNC.remoteLast=rem;SYNC.conflict=null;SYNC.pendingPush=false;
+   persist(false);_lastUserBusinessSig=_businessSig(state);_setDirty(false);
+   _limparResolucaoPendente();
+   try{localStorage.setItem(RESOLVED_KEY,'1')}catch(e){}
+   var ov=document.getElementById('ovSyncConflict');if(ov)ov.classList.remove('open');
+   filter='all';render();_refreshSyncPill();
+   toast('✅ Este iPhone agora é a fonte correta');
+  },false);
+ }catch(e){
+  finished=true;clearTimeout(timer);SYNC.resolving=false;
+  _syncResolutionStatus('Falha ao iniciar a gravação. A escolha ficou registrada e será tentada novamente automaticamente.',true);
+  setPill('wait','🟡 aguardando nuvem…');
+ }
 }
 function resolverSyncUsarNuvem(){
- if(!SYNC.conflict||!SYNC.ref||!SYNC.online||SYNC.resolving)return;
- SYNC.resolving=true;var rem=norm(SYNC.conflict.remote),ag=_ag();
- SYNC.ref.transaction(function(cur){
-  if(!cur)return rem;
-  var base=norm(cur);base.syncEpochV37=Math.max(Number(base.syncEpochV37)||0,ag);base.rev=Math.max(Number(base.rev)||0,ag);base.dev=DEV;return base;
- },function(err,committed,snap){
-  SYNC.resolving=false;
-  if(err){toast('⛔ Não consegui confirmar a nuvem.');_refreshSyncPill();return}
-  var cloud=norm((snap&&snap.val())||rem);state=cloud;SYNC.remoteLast=cloud;SYNC.conflict=null;SYNC.pendingPush=false;
-  persist(false);_lastUserBusinessSig=_businessSig(state);_setDirty(false);
-  try{localStorage.setItem(RESOLVED_KEY,'1')}catch(e){}
-  document.getElementById('ovSyncConflict').classList.remove('open');filter='all';render();_refreshSyncPill();
-  toast('✅ Este iPhone foi alinhado com a nuvem');
- },false);
+ if(!SYNC.conflict){toast('⚠️ A divergência não está mais ativa. Aguarde a atualização da tela.');return}
+ _guardarResolucaoPendente('cloud');
+ _syncResolutionStatus('Escolha registrada: os dados da NUVEM serão usados neste iPhone…',true);
+ setPill('wait','🟡 confirmando nuvem…');
+ _tentarResolucaoPendente();
+}
+function _resolverSyncNuvemAgora(){
+ if(SYNC.resolving||SYNC.pendingResolution!=='cloud')return;
+ if(!SYNC.ref||!SYNC.online){_tentarResolucaoPendente();return}
+ SYNC.resolving=true;
+ _syncResolutionStatus('Confirmando os dados da NUVEM…',true);
+ var rem=norm(SYNC.conflict&&SYNC.conflict.remote?SYNC.conflict.remote:(SYNC.remoteLast||state)),ag=_ag(),finished=false;
+ var timer=setTimeout(function(){
+  if(finished)return;
+  _syncResolutionStatus('Ainda aguardando confirmação da nuvem. A escolha já está registrada.',true);
+ },6000);
+ try{
+  SYNC.ref.transaction(function(cur){
+   if(!cur){
+    rem.syncEpochV37=Math.max(Number(rem.syncEpochV37)||0,ag);
+    rem.rev=Math.max(Number(rem.rev)||0,ag);rem.dev=DEV;return rem;
+   }
+   var base=norm(cur);
+   base.syncEpochV37=Math.max(Number(base.syncEpochV37)||0,ag);
+   base.rev=Math.max(Number(base.rev)||0,ag);base.dev=DEV;return base;
+  },function(err,committed,snap){
+   finished=true;clearTimeout(timer);SYNC.resolving=false;
+   if(err||!snap||!snap.val()){
+    _syncResolutionStatus('Não houve confirmação. A escolha continua registrada e será tentada novamente.',true);
+    setPill('wait','🟡 aguardando nuvem…');return;
+   }
+   var cloud=norm(snap.val());
+   state=cloud;SYNC.remoteLast=cloud;SYNC.conflict=null;SYNC.pendingPush=false;
+   persist(false);_lastUserBusinessSig=_businessSig(state);_setDirty(false);
+   _limparResolucaoPendente();
+   try{localStorage.setItem(RESOLVED_KEY,'1')}catch(e){}
+   var ov=document.getElementById('ovSyncConflict');if(ov)ov.classList.remove('open');
+   filter='all';render();_refreshSyncPill();
+   toast('✅ Este iPhone foi alinhado com a nuvem');
+  },false);
+ }catch(e){
+  finished=true;clearTimeout(timer);SYNC.resolving=false;
+  _syncResolutionStatus('Falha ao iniciar a confirmação. A escolha ficou registrada para nova tentativa.',true);
+  setPill('wait','🟡 aguardando nuvem…');
+ }
 }
 setInterval(function(){ if(SYNC.pendingRemote&&!inputFocused()) adopt(SYNC.pendingRemote); },1500);
 try{
