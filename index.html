@@ -468,6 +468,18 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
   </div>
 </div>
 
+<div class="overlay" id="ovSyncConflict">
+  <div class="sheet">
+    <h3>⚠️ Divergência entre aparelhos</h3>
+    <div class="askMsg">O Semanal deste iPhone está diferente da cópia salva na nuvem. Para não perder dinheiro, o app não vai misturar os dois automaticamente.</div>
+    <div id="syncConflictLocal" class="pprev" style="margin:10px 0"></div>
+    <div id="syncConflictCloud" class="pprev" style="margin:10px 0"></div>
+    <button class="btn primary" onclick="resolverSyncUsarLocal()">Usar ESTE iPhone como correto</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="resolverSyncUsarNuvem()">Usar os dados da NUVEM</button>
+    <div class="askMsg" style="margin-top:10px">Escolha somente no aparelho que você sabe que está correto. Depois, o outro aparelho receberá essa versão.</div>
+  </div>
+</div>
+
 <!-- Editar semana do histórico -->
 <div class="overlay" id="ovEditHist" onclick="if(event.target===this)this.classList.remove('open')">
   <div class="sheet">
@@ -506,7 +518,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=36; var APP_DATE='08/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=37; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -596,8 +608,11 @@ var state=null, saveTimer=null, uid=function(){return Math.random().toString(36)
    consegue ressuscitar um dado apagado. O merge é determinístico e roda também após
    snapshots que ficaram aguardando enquanto alguém digitava. */
 function _ag(){return Date.now()}
-function _mark(o){if(!o)return;o.at=_ag();o.by=DEV}
-function _meta(o){return {at:Number(o&&o.at)||0,by:String(o&&o.by||'')}}
+/* v37: relógio LÓGICO por registro. Cada alteração feita pelo usuário incrementa seq.
+   Assim, uma edição nova não perde para uma cópia velha apenas porque o relógio de
+   um dos iPhones está alguns segundos/minutos diferente. */
+function _mark(o){if(!o)return;o.seq=(Number(o.seq)||0)+1;o.at=_ag();o.by=DEV}
+function _meta(o){return {seq:Number(o&&o.seq)||0,at:Number(o&&o.at)||0,by:String(o&&o.by||'')}}
 function _newer(a,b){
  if(!a)return b;if(!b)return a;
  if(!!a.del!==!!b.del){
@@ -611,16 +626,18 @@ function _newer(a,b){
   }
   return tomb;
  }
- var ma=_meta(a),mb=_meta(b);if(ma.at!==mb.at)return mb.at>ma.at?b:a;
+ var ma=_meta(a),mb=_meta(b);
+ if(ma.seq!==mb.seq)return mb.seq>ma.seq?b:a;
+ if(ma.at!==mb.at)return mb.at>ma.at?b:a;
  if(ma.by!==mb.by)return mb.by>ma.by?b:a;
  return JSON.stringify(b)>JSON.stringify(a)?b:a;
 }
 function _active(a){return toArr(a).filter(function(x){return x&&!x.del})}
 function _weekYear(week,closedAt){var wp=String(week||'').split('/'),d=parseInt(wp[0],10),m=parseInt(wp[1],10),cp=String(closedAt||'').split('/'),baseY=parseInt(cp[2],10)||new Date().getFullYear(),ref=(cp.length>=3?new Date(baseY,(parseInt(cp[1],10)||1)-1,parseInt(cp[0],10)||1):new Date()),best=baseY,dist=Infinity;[baseY-1,baseY,baseY+1].forEach(function(y){var x=new Date(y,(m||1)-1,d||1),dd=Math.abs(x.getTime()-ref.getTime());if(dd<dist){dist=dd;best=y}});return best}
 function _periodKey(week,closedAt){return 'wk:'+_weekYear(week,closedAt)+':'+String(week||'').trim()}
-function _fieldMeta(d,k){var mm=d&&d.fm&&typeof d.fm==='object'?d.fm:null,fm=mm&&(mm[k]||mm._legacy);return fm?{at:Number(fm.at)||0,by:String(fm.by||'')}:{at:Number(d&&d.at)||0,by:String(d&&d.by||'')}}
-function _pickRootField(a,b,k){var ma=_fieldMeta(a,k),mb=_fieldMeta(b,k);if(ma.at!==mb.at)return mb.at>ma.at?{v:b[k],m:mb}:{v:a[k],m:ma};if(ma.by!==mb.by)return mb.by>ma.by?{v:b[k],m:mb}:{v:a[k],m:ma};return JSON.stringify(b[k])>JSON.stringify(a[k])?{v:b[k],m:mb}:{v:a[k],m:ma}}
-function _markField(d,k){if(!d)return;var old={at:Number(d.at)||0,by:String(d.by||'')},n=_ag();d.fm=d.fm&&typeof d.fm==='object'?d.fm:{};if(!d.fm._legacy)d.fm._legacy=old;d.fm[k]={at:n,by:DEV};d.at=n;d.by=DEV}
+function _fieldMeta(d,k){var mm=d&&d.fm&&typeof d.fm==='object'?d.fm:null,fm=mm&&(mm[k]||mm._legacy);return fm?{seq:Number(fm.seq)||0,at:Number(fm.at)||0,by:String(fm.by||'')}:{seq:Number(d&&d.seq)||0,at:Number(d&&d.at)||0,by:String(d&&d.by||'')}}
+function _pickRootField(a,b,k){var ma=_fieldMeta(a,k),mb=_fieldMeta(b,k);if(ma.seq!==mb.seq)return mb.seq>ma.seq?{v:b[k],m:mb}:{v:a[k],m:ma};if(ma.at!==mb.at)return mb.at>ma.at?{v:b[k],m:mb}:{v:a[k],m:ma};if(ma.by!==mb.by)return mb.by>ma.by?{v:b[k],m:mb}:{v:a[k],m:ma};return JSON.stringify(b[k])>JSON.stringify(a[k])?{v:b[k],m:mb}:{v:a[k],m:ma}}
+function _markField(d,k){if(!d)return;var old={seq:Number(d.seq)||0,at:Number(d.at)||0,by:String(d.by||'')},n=_ag(),sq=(Number(d.seq)||0)+1;d.fm=d.fm&&typeof d.fm==='object'?d.fm:{};if(!d.fm._legacy)d.fm._legacy=old;d.fm[k]={seq:sq,at:n,by:DEV};d.seq=sq;d.at=n;d.by=DEV}
 function _latestChildAt(d){var x=0;toArr(d&&d.entries).concat(toArr(d&&d.notes)).forEach(function(z){if(z&&!z.del)x=Math.max(x,Number(z.at)||0)});return x}
 function _mergeDriverRoot(a,b){var base=_newer(a,b),out={};for(var k in base)if(Object.prototype.hasOwnProperty.call(base,k)&&k!=='entries'&&k!=='notes')out[k]=base[k];out.fm={};['name','car','color','plate'].forEach(function(k){var p=_pickRootField(a,b,k);out[k]=p.v;out.fm[k]=p.m});out.at=Math.max(Number(a.at)||0,Number(b.at)||0);out.by=(Number(b.at)||0)>(Number(a.at)||0)?b.by:a.by;var _oa=Number(a.ord)||0,_ob=Number(b.ord)||0;out.ord=(_oa&&_ob)?Math.min(_oa,_ob):(_oa||_ob);return out}
 
@@ -751,7 +768,7 @@ function _mergeState(a,b){
      (semana nova zerada). O que faltou entra no histórico no próximo sync, quando o
      registro da semana fechada já tiver chegado. Isso elimina o "tudo pago". */
  }
- out.resetAt=reset;if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
+ out.resetAt=reset;out.syncEpochV37=Math.max(Number(a.syncEpochV37)||0,Number(b.syncEpochV37)||0);if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
  out.rev=Math.max(Number(a.rev)||0,Number(b.rev)||0);out.dev=(Number(b.rev)||0)>(Number(a.rev)||0)?b.dev:((Number(b.rev)||0)<(Number(a.rev)||0)?a.dev:(String(b.dev||'')>String(a.dev||'')?b.dev:a.dev));_limparFechamentosFantasma26Em(out);_repararFechamento0209Em(out);return norm(out);
 }
 
@@ -837,7 +854,7 @@ function persist(userAction){
 function save(){
  var sig='';try{sig=_businessSig(state)}catch(e){}
  if(sig&&sig===_lastUserBusinessSig){_setSaved('Salvo ✓');return}
- _lastUserBusinessSig=sig;_setSaved('Salvando…');touch();persist(true);clearTimeout(saveTimer);saveTimer=setTimeout(function(){schedulePush();},300);
+ _lastUserBusinessSig=sig;_setSaved('Salvando…');touch();persist(true);_setDirty(true);clearTimeout(saveTimer);saveTimer=setTimeout(function(){schedulePush();},300);
 }
 
 /* ---------- Confirmação própria ---------- */
@@ -933,14 +950,14 @@ function findE(d,id){if(!d)return null;for(var i=0;i<d.entries.length;i++)if(d.e
 function fld(did,f,v){var d=findD(did);if(!d)return;d[f]=v;_markField(d,f);save()}
 function entD(did,eid,v){var e=findE(findD(did),eid);if(!e)return;e.d=v;_mark(e);save()}
 function noteT(did,nid,v){var d=findD(did);if(!d)return;var n=notesAtivas(d).filter(function(x){return x.id===nid})[0];if(!n)return;n.t=v;_mark(n);save()}
-function valInput(inp,did,eid){var e=findE(findD(did),eid);if(!e)return;e.v=parseVal(inp.value);_mark(e);touch();persist(true);updateTotals()}
+function valInput(inp,did,eid){var e=findE(findD(did),eid);if(!e)return;e.v=parseVal(inp.value);_mark(e);touch();persist(true);_setDirty(true);updateTotals()}
 function valBlur(inp,did,eid){var e=findE(findD(did),eid);if(!e)return;e.v=parseVal(inp.value);_mark(e);inp.value=fmt(e.v);inp.classList.toggle('neg',e.v<0);updateTotals();save()}
 function tgl(did,eid){if(LOCK){toast('🔒 Travado — toque no cadeado para liberar');return}var e=findE(findD(did),eid);if(!e)return;e.s=(e.s==='paid'?'pend':'paid');_mark(e);save();render()}
 function addEnt(did){var d=findD(did);if(!d)return;var e={id:uid(),v:0,d:'',s:'pend',at:_ag(),by:DEV,del:false};d.entries.push(e);_mark(d);save();render()}
 function _persistDeleteNow(msg){
  /* Exclusão é operação financeira importante: grava local imediatamente e,
     se houver internet, dispara a transação de sync sem esperar o debounce comum. */
- _lastUserBusinessSig=_businessSig(state);touch();persist(true);render();
+ _lastUserBusinessSig=_businessSig(state);touch();persist(true);_setDirty(true);render();
  clearTimeout(saveTimer);clearTimeout(SYNC.pushTimer);
  if(SYNC.ref&&SYNC.gotRemote&&SYNC.online){setTimeout(push,0)}
  else{SYNC.pendingPush=true;schedulePush()}
@@ -1043,7 +1060,7 @@ function _critTxn(label,mutator,okMsg){
   var r=mutator(base);if(r!==true){motivo=String(r||'Conflito entre aparelhos.');return}
   base.rev=Math.max(_ag(),Number(base.rev)||0,Number(cur&&cur.rev)||0);base.dev=DEV;return norm(base);
  },function(err,committed,snap){
-  CRIT.busy=false;CRIT.label='';setPill(SYNC.online?'on':'wait',SYNC.online?'🟢 sincronizado':'🟡 offline — na fila');
+  CRIT.busy=false;CRIT.label='';_refreshSyncPill();
   if(err){toast('⛔ '+label+' falhou: '+err.message);return}
   if(!committed){
    if(snap&&snap.val())adopt(snap.val());
@@ -1239,7 +1256,18 @@ document.getElementById('weekLabel').addEventListener('click',function(){toast('
 
 /* ================= SINCRONIZAÇÃO (Firebase Realtime Database) ================= */
 var DEV=(function(){try{var d=localStorage.getItem('guimas_dev');if(!d){d=uid()+uid();localStorage.setItem('guimas_dev',d)}return d}catch(e){return uid()}})();
-var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false,gotRemote:false,lastToastAt:0};
+var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false,gotRemote:false,lastToastAt:0,remoteLast:null,localDirty:false,conflict:null,resolving:false};
+var DIRTY_KEY='guimas_semanal_dirty_v37',RESOLVED_KEY='guimas_semanal_sync_v37_resolved';
+try{SYNC.localDirty=localStorage.getItem(DIRTY_KEY)==='1'}catch(e){}
+function _setDirty(v){SYNC.localDirty=!!v;try{localStorage.setItem(DIRTY_KEY,v?'1':'0')}catch(e){};_refreshSyncPill()}
+function _refreshSyncPill(){
+ if(!SYNC.ref){setPill('','⚪ sem sync');return}
+ if(!SYNC.online){setPill('wait','🟡 offline — na fila');return}
+ if(SYNC.conflict){setPill('wait','⚠️ divergência');return}
+ var igual=SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast);
+ if(SYNC.localDirty||SYNC.pendingPush||!igual){setPill('wait','🟡 sincronizando…');return}
+ setPill('on','🟢 sincronizado');
+}
 
 /* Compara o CONTEÚDO sincronizado sem deixar rev/dev ou ordem de arrays criarem
    falsos conflitos. Isso impede o ciclo recebe → regrava → recebe. */
@@ -1261,7 +1289,7 @@ function _syncIgual(a,b){return _syncSig(a)===_syncSig(b)}
    criar ping-pong entre versões diferentes do app. Tombstones (del) continuam entrando. */
 function _canonBusiness(x){
  if(Array.isArray(x)){var a=x.map(_canonBusiness);a.sort(function(u,v){var A=JSON.stringify(u),B=JSON.stringify(v);return A<B?-1:(A>B?1:0)});return a}
- if(x&&typeof x==='object'){var o={};Object.keys(x).sort().forEach(function(k){if(k==='rev'||k==='dev'||k==='at'||k==='by'||k==='weekAt'||k==='resetAt'||k==='fm')return;o[k]=_canonBusiness(x[k])});return o}
+ if(x&&typeof x==='object'){var o={};Object.keys(x).sort().forEach(function(k){if(k==='rev'||k==='dev'||k==='at'||k==='by'||k==='weekAt'||k==='resetAt'||k==='syncEpochV37'||k==='fm')return;o[k]=_canonBusiness(x[k])});return o}
  return x;
 }
 function _businessSig(x){return JSON.stringify(_canonBusiness(x||{}))}
@@ -1275,12 +1303,12 @@ function toArr(x){
  return [];
 }
 function norm(s){
- if(!s||typeof s!=='object')s={};var o={week:(typeof s.week==='string'?s.week:''),weekAt:Number(s.weekAt)||0,resetAt:Number(s.resetAt)||0,rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
- toArr(s.drivers).forEach(function(d){if(!d)return;var dd={id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',ord:Number(d.ord)||0,fm:(d.fm&&typeof d.fm==='object'?JSON.parse(JSON.stringify(d.fm)):{}),at:Number(d.at)||0,by:d.by||'',del:!!d.del,delReason:d.delReason||'',entries:[],notes:[]};
-  toArr(d.entries).forEach(function(e){if(e)dd.entries.push({id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),at:Number(e.at)||0,by:e.by||'',del:!!e.del,delReason:e.delReason||'',originCloseId:e.originCloseId||''})});
-  toArr(d.notes).forEach(function(n){if(n)dd.notes.push({id:n.id||uid(),t:n.t||'',at:Number(n.at)||0,by:n.by||'',del:!!n.del,delReason:n.delReason||'',originCloseId:n.originCloseId||''})});o.drivers.push(dd)
+ if(!s||typeof s!=='object')s={};var o={week:(typeof s.week==='string'?s.week:''),weekAt:Number(s.weekAt)||0,resetAt:Number(s.resetAt)||0,syncEpochV37:Number(s.syncEpochV37)||0,rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
+ toArr(s.drivers).forEach(function(d){if(!d)return;var dd={id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',ord:Number(d.ord)||0,fm:(d.fm&&typeof d.fm==='object'?JSON.parse(JSON.stringify(d.fm)):{}),seq:Number(d.seq)||0,at:Number(d.at)||0,by:d.by||'',del:!!d.del,delReason:d.delReason||'',entries:[],notes:[]};
+  toArr(d.entries).forEach(function(e){if(e)dd.entries.push({id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),seq:Number(e.seq)||0,at:Number(e.at)||0,by:e.by||'',del:!!e.del,delReason:e.delReason||'',originCloseId:e.originCloseId||''})});
+  toArr(d.notes).forEach(function(n){if(n)dd.notes.push({id:n.id||uid(),t:n.t||'',seq:Number(n.seq)||0,at:Number(n.at)||0,by:n.by||'',del:!!n.del,delReason:n.delReason||'',originCloseId:n.originCloseId||''})});o.drivers.push(dd)
  });
- toArr(s.history).forEach(function(w){if(!w)return;var hh={id:w.id||uid(),periodKey:w.periodKey||_periodKey(w.week,w.closedAt),week:w.week||'',closedAt:w.closedAt||'',paid:w.paid||0,pend:w.pend||0,all:w.all||0,carried:(typeof w.carried==='number'?w.carried:undefined),text:w.text||'',drivers:toArr(w.drivers),at:Number(w.at)||0,by:w.by||'',del:!!w.del,delReason:w.delReason||''};o.history.push(hh)});return o;
+ toArr(s.history).forEach(function(w){if(!w)return;var hh={id:w.id||uid(),periodKey:w.periodKey||_periodKey(w.week,w.closedAt),week:w.week||'',closedAt:w.closedAt||'',paid:w.paid||0,pend:w.pend||0,all:w.all||0,carried:(typeof w.carried==='number'?w.carried:undefined),text:w.text||'',drivers:toArr(w.drivers),seq:Number(w.seq)||0,at:Number(w.at)||0,by:w.by||'',del:!!w.del,delReason:w.delReason||''};o.history.push(hh)});return o;
 }
 function syncCfg(){try{return JSON.parse(localStorage.getItem('guimas_sync')||'null')}catch(e){return null}}
 
@@ -1325,8 +1353,8 @@ function startSync(){
   });
   firebase.database().ref('.info/connected').on('value',function(s){
    SYNC.online=!!s.val();
-   setPill(SYNC.online?'on':'wait',SYNC.online?'🟢 sincronizado':'🟡 offline — na fila');
-   if(SYNC.online&&SYNC.pendingPush)push();
+   _refreshSyncPill();
+   if(SYNC.online&&SYNC.pendingPush&&!SYNC.conflict)push();
   });
  }).catch(function(err){
   setPill('wait','🟡 offline — na fila');
@@ -1335,8 +1363,9 @@ function startSync(){
  });
 }
 function push(){
- if(!SYNC.ref||!SYNC.gotRemote){SYNC.pendingPush=true;return}
- SYNC.pendingPush=false;var local=norm(state);
+ if(SYNC.conflict||SYNC.resolving){SYNC.pendingPush=true;_refreshSyncPill();return}
+ if(!SYNC.ref||!SYNC.gotRemote){SYNC.pendingPush=true;_refreshSyncPill();return}
+ SYNC.pendingPush=false;_refreshSyncPill();var local=norm(state);
  SYNC.ref.transaction(function(cur){
   var junto=cur?_mergeState(cur,local):local;
   /* Se o conteúdo funcional já é igual, não grava só para alinhar relógio/metadados.
@@ -1344,40 +1373,116 @@ function push(){
   if(cur&&_businessIgual(junto,cur))return;
   junto.rev=Math.max(_ag(),Number(local.rev)||0,Number(cur&&cur.rev)||0);junto.dev=DEV;return junto;
  },function(err,committed,snap){
-  if(err){SYNC.pendingPush=true;return}
-  if(!committed){SYNC.pendingPush=false;return}
+  if(err){SYNC.pendingPush=true;_refreshSyncPill();return}
+  if(!committed){
+   SYNC.pendingPush=false;
+   if(snap&&snap.val())SYNC.remoteLast=norm(snap.val());
+   if(SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast))_setDirty(false);else _refreshSyncPill();
+   return
+  }
   if(snap&&snap.val()){
    var remoto=norm(snap.val()),atual=norm(state),junto=_mergeState(remoto,atual);
+   SYNC.remoteLast=remoto;
    var mudaDados=!_businessIgual(junto,atual),mudaMeta=!_syncIgual(junto,atual),precisaNuvem=!_businessIgual(junto,remoto);
    if(mudaMeta){state=junto;persist(false);if(mudaDados&&!inputFocused()){_lastUserBusinessSig=_businessSig(state);render()}}
-   if(precisaNuvem){touch();persist(false);schedulePush()}
+   if(precisaNuvem){touch();persist(false);SYNC.pendingPush=true;schedulePush()}
+   else if(_businessIgual(state,remoto)){SYNC.pendingPush=false;_setDirty(false)}
+   _refreshSyncPill();
   }
  },false);
 }
 function schedulePush(){
+ SYNC.pendingPush=true;_refreshSyncPill();
  clearTimeout(SYNC.pushTimer);
- SYNC.pushTimer=setTimeout(push,1200);
+ SYNC.pushTimer=setTimeout(push,700);
 }
 function inputFocused(){
  var a=document.activeElement;
  return !!(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'));
 }
+function _syncResumo(st){
+ var t=totals(_active(st&&st.drivers));
+ return 'Semana '+String(st&&st.week||'—')+' · Recebido '+fmt(t.paid)+' · Pendente '+fmt(t.pend)+' · Total '+fmt(t.all);
+}
+function _mostrarConflitoSync(local,rem){
+ SYNC.conflict={local:norm(JSON.parse(JSON.stringify(local))),remote:norm(JSON.parse(JSON.stringify(rem)))};
+ document.getElementById('syncConflictLocal').innerHTML='<b>ESTE IPHONE</b><br>'+esc(_syncResumo(local));
+ document.getElementById('syncConflictCloud').innerHTML='<b>NUVEM</b><br>'+esc(_syncResumo(rem));
+ document.getElementById('ovSyncConflict').classList.add('open');
+ _refreshSyncPill();
+}
 function onRemote(v){
- if(!v)return;SYNC.gotRemote=true;var rem=norm(v);
- if(inputFocused()){SYNC.pendingRemote=SYNC.pendingRemote?_mergeState(SYNC.pendingRemote,rem):rem;return}
+ if(!v)return;SYNC.gotRemote=true;var rem=norm(v);SYNC.remoteLast=rem;
+ if(SYNC.conflict){_refreshSyncPill();return}
+ var resolvido=false;try{resolvido=localStorage.getItem(RESOLVED_KEY)==='1'}catch(e){}
+ /* Migração v36→v37: se há diferença funcional, NÃO adivinha. Se outro aparelho já
+    resolveu explicitamente (syncEpochV37), a nuvem passa a ser a fonte canônica. */
+ if(!resolvido&&!_businessIgual(state,rem)){
+  if(Number(rem.syncEpochV37)>0){
+   state=rem;persist(false);_lastUserBusinessSig=_businessSig(state);_setDirty(false);
+   try{localStorage.setItem(RESOLVED_KEY,'1')}catch(e){}
+   filter='all';render();_refreshSyncPill();toast('✅ Sincronização alinhada pela nuvem');return;
+  }
+  _mostrarConflitoSync(state,rem);return;
+ }
+ if(!resolvido){try{localStorage.setItem(RESOLVED_KEY,'1')}catch(e){}}
+ if(inputFocused()){SYNC.pendingRemote=SYNC.pendingRemote?_mergeState(SYNC.pendingRemote,rem):rem;_refreshSyncPill();return}
  adopt(rem);
 }
 function adopt(v){
  var rem=norm(v),atual=norm(state),junto=_mergeState(rem,atual);
+ SYNC.remoteLast=rem;
  var mudaDados=!_businessIgual(junto,atual),mudaMeta=!_syncIgual(junto,atual),precisaNuvem=!_businessIgual(junto,rem);
  SYNC.pendingRemote=null;
- /* Metadado interno pode ser absorvido em silêncio. Só conteúdo funcional vindo
-    do outro aparelho redesenha a tela/mostra aviso; só conteúdo funcional ausente
-    da nuvem justifica nova gravação. */
- if(!mudaMeta&&!precisaNuvem)return;
+ if(!mudaMeta&&!precisaNuvem){
+  if(_businessIgual(atual,rem)){SYNC.pendingPush=false;_setDirty(false)}
+  _refreshSyncPill();return;
+ }
  if(mudaMeta){state=junto;persist(false)}
  if(mudaDados){if(!inputFocused())_lastUserBusinessSig=_businessSig(state);filter='all';render();_toastSync()}
- if(precisaNuvem){if(!mudaMeta)state=junto;touch();persist(false);schedulePush()}
+ if(precisaNuvem){if(!mudaMeta)state=junto;touch();persist(false);SYNC.pendingPush=true;schedulePush()}
+ else if(_businessIgual(state,rem)){SYNC.pendingPush=false;_setDirty(false)}
+ _refreshSyncPill();
+}
+function resolverSyncUsarLocal(){
+ if(!SYNC.conflict||!SYNC.ref||!SYNC.online||SYNC.resolving)return;
+ SYNC.resolving=true;setPill('wait','🟡 gravando este iPhone…');
+ var local=norm(SYNC.conflict.local),ag=_ag();
+ SYNC.ref.transaction(function(cur){
+  var base=cur?norm(cur):norm({});
+  /* Escolha EXPLÍCITA do usuário: a semana corrente deste iPhone vira canônica.
+     Histórico continua sendo unido, para não apagar fechamentos legítimos. */
+  base.week=local.week;base.weekAt=Math.max(Number(local.weekAt)||0,ag);
+  base.drivers=JSON.parse(JSON.stringify(local.drivers));
+  base.history=_mergeHistoryList(base.history,local.history);
+  base.resetAt=Math.max(Number(base.resetAt)||0,Number(local.resetAt)||0);
+  base.syncEpochV37=ag;base.rev=Math.max(ag,Number(base.rev)||0,Number(local.rev)||0);base.dev=DEV;
+  return norm(base);
+ },function(err,committed,snap){
+  SYNC.resolving=false;
+  if(err||!committed){toast('⛔ Não consegui definir este iPhone como fonte. Tente novamente com internet.');_refreshSyncPill();return}
+  var rem=norm(snap.val());state=rem;SYNC.remoteLast=rem;SYNC.conflict=null;SYNC.pendingPush=false;
+  persist(false);_lastUserBusinessSig=_businessSig(state);_setDirty(false);
+  try{localStorage.setItem(RESOLVED_KEY,'1')}catch(e){}
+  document.getElementById('ovSyncConflict').classList.remove('open');filter='all';render();_refreshSyncPill();
+  toast('✅ Este iPhone virou a fonte correta da semana');
+ },false);
+}
+function resolverSyncUsarNuvem(){
+ if(!SYNC.conflict||!SYNC.ref||!SYNC.online||SYNC.resolving)return;
+ SYNC.resolving=true;var rem=norm(SYNC.conflict.remote),ag=_ag();
+ SYNC.ref.transaction(function(cur){
+  if(!cur)return rem;
+  var base=norm(cur);base.syncEpochV37=Math.max(Number(base.syncEpochV37)||0,ag);base.rev=Math.max(Number(base.rev)||0,ag);base.dev=DEV;return base;
+ },function(err,committed,snap){
+  SYNC.resolving=false;
+  if(err){toast('⛔ Não consegui confirmar a nuvem.');_refreshSyncPill();return}
+  var cloud=norm((snap&&snap.val())||rem);state=cloud;SYNC.remoteLast=cloud;SYNC.conflict=null;SYNC.pendingPush=false;
+  persist(false);_lastUserBusinessSig=_businessSig(state);_setDirty(false);
+  try{localStorage.setItem(RESOLVED_KEY,'1')}catch(e){}
+  document.getElementById('ovSyncConflict').classList.remove('open');filter='all';render();_refreshSyncPill();
+  toast('✅ Este iPhone foi alinhado com a nuvem');
+ },false);
 }
 setInterval(function(){ if(SYNC.pendingRemote&&!inputFocused()) adopt(SYNC.pendingRemote); },1500);
 try{
@@ -1389,7 +1494,8 @@ function openSync(){
  var cfg=syncCfg();
  document.getElementById('syncStatusMsg').textContent=
   cfg&&cfg.config
-   ?(SYNC.online?'Conectado. Alterações aparecem nos dois aparelhos em segundos.':'Configurado. Aguardando conexão — as alterações estão na fila e sobem sozinhas.')
+   ?(SYNC.conflict?'Há uma divergência pendente entre este iPhone e a nuvem. Resolva antes de continuar.':
+     (SYNC.online?(_businessIgual(state,SYNC.remoteLast||{})&&!SYNC.localDirty?'Conectado e confirmado: este iPhone está igual à nuvem.':'Conectado, mas ainda existem alterações aguardando confirmação na nuvem.'):'Configurado. Aguardando conexão — as alterações estão na fila e sobem sozinhas.'))
    :'Sem sincronização: os dados ficam só neste aparelho. Cole a configuração do Firebase e crie uma chave da família (a mesma nos dois iPhones).';
  if(cfg){document.getElementById('syncCfgInput').value=JSON.stringify(cfg.config,null,1);document.getElementById('syncKeyInput').value=cfg.key||''}
  document.getElementById('ovSync').classList.add('open');
