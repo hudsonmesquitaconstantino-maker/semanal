@@ -475,9 +475,10 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
     <div id="syncConflictLocal" class="pprev" style="margin:10px 0"></div>
     <div id="syncConflictCloud" class="pprev" style="margin:10px 0"></div>
     <div class="askMsg" style="margin-top:10px"><b>Modo diagnóstico seguro:</b> nenhuma das opções abaixo altera a nuvem.</div>
-    <button id="syncExportLocal" class="btn primary" onclick="exportarBackupDiagnostico()">💾 Exportar backup DESTE iPhone</button>
+    <button id="syncCloudDiag" class="btn primary" onclick="executarDiagnosticoNuvem()">🧪 Testar conexão e gerar diagnóstico</button>
+    <button id="syncExportLocal" class="btn ghost" style="margin-top:8px" onclick="exportarBackupDiagnostico()">💾 Exportar backup local novamente</button>
     <button id="syncCloseDiag" class="btn ghost" style="margin-top:8px" onclick="fecharConflitoParaConsultar()">Fechar e consultar o Semanal</button>
-    <div id="syncConflictStatus" class="askMsg" style="margin-top:10px">Exporte este arquivo antes de qualquer correção. Depois faça o mesmo no outro iPhone.</div>
+    <div id="syncConflictStatus" class="askMsg" style="margin-top:10px">O teste lê a nuvem e executa uma transação SEM ALTERAÇÃO no próprio nó do Semanal. Nenhum valor é modificado.</div>
   </div>
 </div>
 
@@ -519,7 +520,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=39; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=40; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -1303,6 +1304,97 @@ function fecharConflitoParaConsultar(){
  /* SYNC.conflict permanece ativo: push() continua bloqueado. É somente consulta. */
  _refreshSyncPill();
  toast('🔎 Modo consulta — nada será enviado enquanto houver divergência');
+}
+function _diagDownload(obj,nome){
+ try{
+  var raw=JSON.stringify(obj,null,1),blob=new Blob([raw],{type:'application/json'}),file=null;
+  try{file=new File([blob],nome,{type:'application/json'})}catch(e){}
+  if(file&&navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){
+   navigator.share({files:[file],title:nome}).catch(function(e){
+    if(e&&e.name==='AbortError')return;downloadBlob(blob,nome);
+   });
+  }else downloadBlob(blob,nome);
+ }catch(e){toast('⚠️ Falha ao preparar diagnóstico')}
+}
+function executarDiagnosticoNuvem(){
+ var btn=document.getElementById('syncCloudDiag');
+ if(btn)btn.disabled=true;
+ _syncResolutionStatus('Executando diagnóstico: conexão → leitura → transação sem alteração…',true);
+ var inicio=Date.now(),cfg=syncCfg(),rel={
+  appVer:APP_VER,
+  geradoEm:new Date().toISOString(),
+  dev:DEV,
+  localResumo:_syncResumo(state),
+  localRev:Number(state&&state.rev)||0,
+  onlineFlag:!!SYNC.online,
+  gotRemote:!!SYNC.gotRemote,
+  pendingPush:!!SYNC.pendingPush,
+  conflitoAtivo:!!SYNC.conflict,
+  authUid:'',
+  familyHash:'',
+  readOk:false,
+  readErro:'',
+  cloudResumo:'',
+  cloudRev:0,
+  cloudDev:'',
+  localIgualCloud:false,
+  transactionOk:false,
+  transactionCommitted:false,
+  transactionErro:'',
+  transactionMs:0,
+  observacao:'A transação de teste retorna exatamente o valor atual da nuvem; não modifica campos financeiros.'
+ };
+ try{rel.authUid=(firebase.auth().currentUser&&firebase.auth().currentUser.uid)||''}catch(e){rel.authUid='ERRO:'+String(e&&e.message||e)}
+ if(!cfg||!cfg.key||!SYNC.ref){
+  rel.readErro='SYNC.ref/configuração indisponível';
+  _syncResolutionStatus('Diagnóstico falhou antes da leitura: referência/configuração indisponível.',false);
+  if(btn)btn.disabled=false;
+  _diagDownload(rel,'diagnostico-nuvem-v40-'+String(DEV).slice(0,8)+'.json');
+  return;
+ }
+ famHash(cfg.key).then(function(h){
+  rel.familyHash=h;
+  return SYNC.ref.once('value');
+ }).then(function(snap){
+  var cloud=norm(snap.val()||{});
+  rel.readOk=true;
+  rel.cloudResumo=_syncResumo(cloud);
+  rel.cloudRev=Number(cloud.rev)||0;
+  rel.cloudDev=String(cloud.dev||'');
+  rel.localIgualCloud=_businessIgual(state,cloud);
+  /* Teste no MESMO nó financeiro, mas retorna exatamente cur.
+     Serve apenas para obter ACK/erro da transação no caminho real. */
+  var txIni=Date.now();
+  return new Promise(function(resolve){
+   try{
+    SYNC.ref.transaction(function(cur){return cur;},function(err,committed,tsnap){
+     rel.transactionMs=Date.now()-txIni;
+     rel.transactionOk=!err;
+     rel.transactionCommitted=!!committed;
+     rel.transactionErro=err?String(err.code||err.message||err):'';
+     resolve();
+    },false);
+   }catch(e){
+    rel.transactionMs=Date.now()-txIni;
+    rel.transactionOk=false;
+    rel.transactionErro='EXCEPTION:'+String(e&&e.message||e);
+    resolve();
+   }
+  });
+ }).catch(function(e){
+  rel.readErro=String(e&&e.code||e&&e.message||e);
+ }).then(function(){
+  rel.totalMs=Date.now()-inicio;
+  var nome='diagnostico-nuvem-v40-'+String(DEV).slice(0,8)+'-'+Date.now()+'.json';
+  _syncResolutionStatus(
+   rel.readOk
+    ?('Diagnóstico concluído. Nuvem: '+rel.cloudResumo+' · transação: '+(rel.transactionOk?'ACK recebido':'FALHOU')+'. Salve/compartilhe o arquivo.')
+    :('Diagnóstico concluído com falha de leitura: '+rel.readErro),
+   false
+  );
+  if(btn)btn.disabled=false;
+  _diagDownload(rel,nome);
+ });
 }
 function _guardarResolucaoPendente(tipo){
  SYNC.pendingResolution=tipo||'';
