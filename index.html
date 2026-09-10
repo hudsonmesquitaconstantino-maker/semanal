@@ -474,12 +474,12 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
     <div class="askMsg">O Semanal deste iPhone está diferente da cópia salva na nuvem. Para não perder dinheiro, o app não vai misturar os dois automaticamente.</div>
     <div id="syncConflictLocal" class="pprev" style="margin:10px 0"></div>
     <div id="syncConflictCloud" class="pprev" style="margin:10px 0"></div>
-    <div class="askMsg" style="margin-top:10px"><b>Modo diagnóstico seguro:</b> nenhuma das opções abaixo altera a nuvem.</div>
+    <div class="askMsg" style="margin-top:10px"><b>Resgate controlado:</b> somente o botão verde altera a nuvem, usando a cópia conferida deste iPhone.</div>
     <button id="syncRescueFather" class="btn primary" onclick="resgatarNuvemComPai()">✅ Corrigir nuvem com ESTE iPhone</button>
     <button id="syncCloudDiag" class="btn ghost" style="margin-top:8px" onclick="executarDiagnosticoNuvem()">🧪 Testar conexão</button>
     <button id="syncExportLocal" class="btn ghost" style="margin-top:8px" onclick="exportarBackupDiagnostico()">💾 Exportar backup local novamente</button>
     <button id="syncCloseDiag" class="btn ghost" style="margin-top:8px" onclick="fecharConflitoParaConsultar()">Fechar e consultar o Semanal</button>
-    <div id="syncConflictStatus" class="askMsg" style="margin-top:10px">O resgate só é liberado no iPhone do Fábio e somente se os totais locais ainda forem os valores conferidos no diagnóstico.</div>
+    <div id="syncConflictStatus" class="askMsg" style="margin-top:10px">O botão verde só é liberado no iPhone do Fábio e exige os totais conferidos: R$12.047,50 recebido + R$7.144,00 pendente.</div>
   </div>
 </div>
 
@@ -521,7 +521,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=41; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=42; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -771,7 +771,7 @@ function _mergeState(a,b){
      (semana nova zerada). O que faltou entra no histórico no próximo sync, quando o
      registro da semana fechada já tiver chegado. Isso elimina o "tudo pago". */
  }
- out.resetAt=reset;out.syncEpochV37=Math.max(Number(a.syncEpochV37)||0,Number(b.syncEpochV37)||0);out.syncEpochV41=Math.max(Number(a.syncEpochV41)||0,Number(b.syncEpochV41)||0);if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
+ out.resetAt=reset;out.syncEpochV37=Math.max(Number(a.syncEpochV37)||0,Number(b.syncEpochV37)||0);out.syncEpochV41=Math.max(Number(a.syncEpochV41)||0,Number(b.syncEpochV41)||0);out.syncEpochV42=Math.max(Number(a.syncEpochV42)||0,Number(b.syncEpochV42)||0);if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
  out.rev=Math.max(Number(a.rev)||0,Number(b.rev)||0);out.dev=(Number(b.rev)||0)>(Number(a.rev)||0)?b.dev:((Number(b.rev)||0)<(Number(a.rev)||0)?a.dev:(String(b.dev||'')>String(a.dev||'')?b.dev:a.dev));_limparFechamentosFantasma26Em(out);_repararFechamento0209Em(out);return norm(out);
 }
 
@@ -1329,65 +1329,124 @@ function _resgateFabioValido(){
   && String(state&&state.week||'').trim()==='09/09'
   && t.paid===1204750 && t.pend===714400 && t.all===1919150;
 }
+var RESGATE42_RUNNING=false;
+function _promiseTimeout(p,ms,label){
+ return Promise.race([
+  p,
+  new Promise(function(_,rej){setTimeout(function(){rej(new Error(label||'tempo esgotado'))},ms)})
+ ]);
+}
+function _cloudResumoValores(st){
+ var t=totals((st&&st.drivers)||[]);
+ return {week:String(st&&st.week||''),paid:t.paid,pend:t.pend,all:t.all};
+}
 function resgatarNuvemComPai(){
  if(!_resgateFabioValido()){
-  _syncResolutionStatus('⛔ Resgate bloqueado: este não é o iPhone do Fábio ou os totais locais mudaram. Nenhum dado foi enviado.',false);
+  _syncResolutionStatus('⛔ Resgate bloqueado: aparelho ou totais locais não correspondem ao backup conferido do Fábio.',false);
   return;
  }
+ if(RESGATE42_RUNNING)return;
  if(!SYNC.ref||!SYNC.online||!SYNC.gotRemote){
-  _syncResolutionStatus('Aguardando conexão completa com a nuvem. Não altere valores e tente novamente em alguns segundos.',false);
+  _syncResolutionStatus('⛔ Firebase ainda não está pronto. Aguarde alguns segundos e tente novamente.',false);
   return;
  }
+
  var btn=document.getElementById('syncRescueFather');if(btn)btn.disabled=true;
- _syncResolutionStatus('Gravando a semana correta do Fábio na nuvem e aguardando confirmação…',true);
- SYNC.resolving=true;
- var local=norm(JSON.parse(JSON.stringify(state))),ag=_ag();
- SYNC.ref.transaction(function(cur){
-  var base=cur?norm(cur):norm({});
-  /* Travas da recuperação: não grava se a nuvem já mudou para outra semana. */
-  if(base.week&&base.week!==local.week)return;
-  base.week=local.week;
-  base.weekAt=Math.max(Number(base.weekAt)||0,Number(local.weekAt)||0,ag);
-  base.drivers=JSON.parse(JSON.stringify(local.drivers));
-  /* Preserva fechamentos existentes na nuvem e incorpora os do aparelho do Fábio. */
-  base.history=_mergeHistoryList(base.history,local.history);
-  base.resetAt=Math.max(Number(base.resetAt)||0,Number(local.resetAt)||0);
-  base.syncEpochV37=Math.max(Number(base.syncEpochV37)||0,ag);
-  base.syncEpochV41=ag;
-  base.rev=Math.max(Number(base.rev)||0,Number(local.rev)||0,ag);
-  base.dev=DEV;
-  return norm(base);
- },function(err,committed,snap){
-  if(err||!committed||!snap||!snap.val()){
-   SYNC.resolving=false;
-   if(btn)btn.disabled=false;
-   _syncResolutionStatus('⛔ A nuvem NÃO confirmou a correção. Nada será tratado como sincronizado. Erro: '+String(err&&err.code||err&&err.message||'sem commit'),false);
-   _setDirty(true);_refreshSyncPill();return;
-  }
-  var rem=norm(snap.val()),tt=totals(rem.drivers);
-  if(rem.week!=='09/09'||tt.paid!==1204750||tt.pend!==714400||tt.all!==1919150||!Number(rem.syncEpochV41)){
-   SYNC.resolving=false;
-   if(btn)btn.disabled=false;
-   _syncResolutionStatus('⛔ O Firebase respondeu, mas a leitura devolvida NÃO bateu com os valores esperados. Resgate interrompido.',false);
-   _setDirty(true);_refreshSyncPill();return;
-  }
-  /* Segunda leitura independente: só encerra depois que o servidor devolver a mesma semana. */
-  SYNC.ref.once('value').then(function(s2){
-   var conf=norm(s2.val()||{}),tc=totals(conf.drivers);
-   if(conf.week!=='09/09'||tc.paid!==1204750||tc.pend!==714400||tc.all!==1919150||Number(conf.syncEpochV41)!==Number(rem.syncEpochV41)){
-    throw new Error('verificação pós-commit divergente');
+ RESGATE42_RUNNING=true;SYNC.resolving=true;
+ _syncResolutionStatus('1/3 · Conferindo a cópia que está hoje na nuvem…',true);
+ setPill('wait','🟡 conferindo nuvem…');
+
+ var local=JSON.parse(JSON.stringify(norm(state))),cloudAntes=null,payload=null,epoch=0;
+
+ _promiseTimeout(SYNC.ref.once('value'),8000,'leitura inicial da nuvem demorou mais de 8 segundos')
+ .then(function(snap){
+   cloudAntes=norm(snap.val()||{});
+   var c=_cloudResumoValores(cloudAntes);
+
+   /* Só aceita:
+      A) exatamente a nuvem antiga medida no diagnóstico; ou
+      B) a nuvem já corrigida para os totais do Fábio. */
+   var antiga=(c.week==='09/09'&&c.paid===138050&&c.pend===1628400&&c.all===1766450);
+   var correta=(c.week==='09/09'&&c.paid===1204750&&c.pend===714400&&c.all===1919150);
+
+   if(correta){
+    return {jaCorreta:true,cloud:cloudAntes};
    }
-   state=conf;SYNC.remoteLast=conf;SYNC.conflict=null;SYNC.pendingPush=false;SYNC.resolving=false;
+   if(!antiga){
+    throw new Error('A nuvem mudou desde o diagnóstico. Encontrado: '+_syncResumo(cloudAntes)+'. Resgate interrompido.');
+   }
+
+   _syncResolutionStatus('2/3 · Nuvem antiga confirmada. Gravando a semana correta do Fábio…',true);
+   setPill('wait','🟡 gravando na nuvem…');
+
+   /* Parte da própria nuvem para preservar qualquer metadado/histórico já existente.
+      Só a semana corrente é substituída pela cópia conferida do Fábio. */
+   var base=JSON.parse(JSON.stringify(cloudAntes));
+   base=norm(base);
+   base.week=local.week;
+   base.weekAt=Math.max(Number(base.weekAt)||0,Number(local.weekAt)||0,Date.now());
+   base.drivers=JSON.parse(JSON.stringify(local.drivers));
+   base.history=_mergeHistoryList(base.history,local.history);
+   base.resetAt=Math.max(Number(base.resetAt)||0,Number(local.resetAt)||0);
+   epoch=Date.now();
+   base.syncEpochV37=Math.max(Number(base.syncEpochV37)||0,epoch);
+   base.syncEpochV41=Math.max(Number(base.syncEpochV41)||0,epoch);
+   base.syncEpochV42=epoch;
+   base.rev=Math.max(Number(base.rev)||0,Number(local.rev)||0,epoch);
+   base.dev=DEV;
+
+   /* JSON round-trip remove qualquer undefined antes do set. */
+   payload=JSON.parse(JSON.stringify(norm(base)));
+
+   return _promiseTimeout(
+     SYNC.ref.set(payload).then(function(){return {jaCorreta:false}}),
+     10000,
+     'gravação direta demorou mais de 10 segundos'
+   );
+ })
+ .then(function(info){
+   _syncResolutionStatus('3/3 · Escrita respondeu. Fazendo uma nova leitura independente para confirmar…',true);
+   setPill('wait','🟡 verificando confirmação…');
+   return _promiseTimeout(SYNC.ref.once('value'),8000,'segunda leitura demorou mais de 8 segundos');
+ })
+ .then(function(s2){
+   var conf=norm(s2.val()||{}),t=totals(conf.drivers);
+   if(conf.week!=='09/09'||t.paid!==1204750||t.pend!==714400||t.all!==1919150){
+    throw new Error('A segunda leitura não confirmou os valores do Fábio. Recebido '+fmt(t.paid)+' · Pendente '+fmt(t.pend)+' · Total '+fmt(t.all));
+   }
+
+   /* Se foi uma nova escrita, exige também o epoch v42. Se já estava correta antes,
+      cria o epoch com uma atualização mínima e confirma de novo. */
+   if(!Number(conf.syncEpochV42)){
+    var ep=Date.now();
+    return _promiseTimeout(
+      SYNC.ref.update({syncEpochV42:ep,rev:Math.max(Number(conf.rev)||0,ep),dev:DEV})
+       .then(function(){return SYNC.ref.once('value')}),
+      10000,
+      'marcação canônica v42 demorou demais'
+    ).then(function(s3){return norm(s3.val()||{})});
+   }
+   return conf;
+ })
+ .then(function(conf){
+   var t=totals(conf.drivers);
+   if(conf.week!=='09/09'||t.paid!==1204750||t.pend!==714400||t.all!==1919150||!Number(conf.syncEpochV42)){
+    throw new Error('confirmação final v42 divergente');
+   }
+   state=conf;SYNC.remoteLast=conf;SYNC.conflict=null;SYNC.pendingPush=false;
+   RESGATE42_RUNNING=false;SYNC.resolving=false;
    persist(false);_lastUserBusinessSig=_businessSig(state);_setDirty(false);
    try{localStorage.setItem(RESOLVED_KEY,'1')}catch(e){}
    var ov=document.getElementById('ovSyncConflict');if(ov)ov.classList.remove('open');
    filter='all';render();_refreshSyncPill();
-   toast('✅ Nuvem corrigida e confirmada: R$19.191,50');
-  }).catch(function(e){
-   SYNC.resolving=false;if(btn)btn.disabled=false;_setDirty(true);_refreshSyncPill();
-   _syncResolutionStatus('⚠️ A escrita respondeu, mas a segunda conferência falhou. Não consideramos sincronizado: '+String(e&&e.message||e),false);
-  });
- },false);
+   toast('✅ NUVEM CONFIRMADA · R$19.191,50');
+ })
+ .catch(function(e){
+   RESGATE42_RUNNING=false;SYNC.resolving=false;
+   if(btn)btn.disabled=false;
+   _setDirty(true);_refreshSyncPill();
+   _syncResolutionStatus('⛔ RESGATE NÃO CONFIRMADO: '+String(e&&e.message||e)+'. Nenhum sucesso foi assumido.',false);
+ });
 }
 
 function executarDiagnosticoNuvem(){
@@ -1515,7 +1574,7 @@ function _syncIgual(a,b){return _syncSig(a)===_syncSig(b)}
    criar ping-pong entre versões diferentes do app. Tombstones (del) continuam entrando. */
 function _canonBusiness(x){
  if(Array.isArray(x)){var a=x.map(_canonBusiness);a.sort(function(u,v){var A=JSON.stringify(u),B=JSON.stringify(v);return A<B?-1:(A>B?1:0)});return a}
- if(x&&typeof x==='object'){var o={};Object.keys(x).sort().forEach(function(k){if(k==='rev'||k==='dev'||k==='at'||k==='by'||k==='weekAt'||k==='resetAt'||k==='syncEpochV37'||k==='syncEpochV41'||k==='fm')return;o[k]=_canonBusiness(x[k])});return o}
+ if(x&&typeof x==='object'){var o={};Object.keys(x).sort().forEach(function(k){if(k==='rev'||k==='dev'||k==='at'||k==='by'||k==='weekAt'||k==='resetAt'||k==='syncEpochV37'||k==='syncEpochV41'||k==='syncEpochV42'||k==='fm')return;o[k]=_canonBusiness(x[k])});return o}
  return x;
 }
 function _businessSig(x){return JSON.stringify(_canonBusiness(x||{}))}
@@ -1529,7 +1588,7 @@ function toArr(x){
  return [];
 }
 function norm(s){
- if(!s||typeof s!=='object')s={};var o={week:(typeof s.week==='string'?s.week:''),weekAt:Number(s.weekAt)||0,resetAt:Number(s.resetAt)||0,syncEpochV37:Number(s.syncEpochV37)||0,syncEpochV41:Number(s.syncEpochV41)||0,rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
+ if(!s||typeof s!=='object')s={};var o={week:(typeof s.week==='string'?s.week:''),weekAt:Number(s.weekAt)||0,resetAt:Number(s.resetAt)||0,syncEpochV37:Number(s.syncEpochV37)||0,syncEpochV41:Number(s.syncEpochV41)||0,syncEpochV42:Number(s.syncEpochV42)||0,rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
  toArr(s.drivers).forEach(function(d){if(!d)return;var dd={id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',ord:Number(d.ord)||0,fm:(d.fm&&typeof d.fm==='object'?JSON.parse(JSON.stringify(d.fm)):{}),seq:Number(d.seq)||0,at:Number(d.at)||0,by:d.by||'',del:!!d.del,delReason:d.delReason||'',entries:[],notes:[]};
   toArr(d.entries).forEach(function(e){if(e)dd.entries.push({id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),seq:Number(e.seq)||0,at:Number(e.at)||0,by:e.by||'',del:!!e.del,delReason:e.delReason||'',originCloseId:e.originCloseId||''})});
   toArr(d.notes).forEach(function(n){if(n)dd.notes.push({id:n.id||uid(),t:n.t||'',seq:Number(n.seq)||0,at:Number(n.at)||0,by:n.by||'',del:!!n.del,delReason:n.delReason||'',originCloseId:n.originCloseId||''})});o.drivers.push(dd)
@@ -1654,21 +1713,23 @@ function _mostrarConflitoSync(local,rem){
 }
 function onRemote(v){
  if(!v)return;SYNC.gotRemote=true;var rem=norm(v);SYNC.remoteLast=rem;
- /* Resgate v41: uma nuvem marcada com epoch canônico mais novo substitui SOMENTE
-    a semana corrente local. Isso é intencional para alinhar o segundo iPhone ao
-    estado conferido do Fábio sem um merge ressuscitar a cópia antiga. */
- if(Number(rem.syncEpochV41)>Number(state&&state.syncEpochV41||0)){
+ /* Durante o resgate direto, apenas registra o snapshot recebido; a rotina de
+    resgate faz sua própria verificação e é a única que encerra a operação. */
+ if(RESGATE42_RUNNING){_refreshSyncPill();return}
+ /* Epoch canônico v42: o segundo iPhone deve adotar a semana confirmada sem
+    misturar a cópia velha. */
+ if(Number(rem.syncEpochV42)>Number(state&&state.syncEpochV42||0)){
   var atual=norm(state);
   atual.week=rem.week;atual.weekAt=rem.weekAt;
   atual.drivers=JSON.parse(JSON.stringify(rem.drivers));
   atual.history=_mergeHistoryList(atual.history,rem.history);
   atual.syncEpochV37=Math.max(Number(atual.syncEpochV37)||0,Number(rem.syncEpochV37)||0);
-  atual.syncEpochV41=Number(rem.syncEpochV41)||0;
+  atual.syncEpochV41=Math.max(Number(atual.syncEpochV41)||0,Number(rem.syncEpochV41)||0);atual.syncEpochV42=Number(rem.syncEpochV42)||0;
   atual.rev=Math.max(Number(atual.rev)||0,Number(rem.rev)||0);atual.dev=rem.dev||atual.dev;
   state=norm(atual);SYNC.conflict=null;SYNC.pendingPush=false;SYNC.remoteLast=rem;
   persist(false);_lastUserBusinessSig=_businessSig(state);_setDirty(false);
   var ov41=document.getElementById('ovSyncConflict');if(ov41)ov41.classList.remove('open');
-  filter='all';render();_refreshSyncPill();toast('✅ Semana alinhada com a cópia confirmada na nuvem');
+  filter='all';render();_refreshSyncPill();toast('✅ Semana alinhada com a nuvem confirmada · R$19.191,50');
   return;
  }
  if(SYNC.pendingResolution){
