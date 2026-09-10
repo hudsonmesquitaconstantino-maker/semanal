@@ -525,7 +525,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=46; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=47; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -1291,7 +1291,7 @@ document.getElementById('weekLabel').addEventListener('click',function(){toast('
 
 /* ================= SINCRONIZAÇÃO (Firebase Realtime Database) ================= */
 var DEV=(function(){try{var d=localStorage.getItem('guimas_dev');if(!d){d=uid()+uid();localStorage.setItem('guimas_dev',d)}return d}catch(e){return uid()}})();
-var SYNC={ref:null,connRef:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,retryTimer:null,started:false,starting:false,gotRemote:false,lastToastAt:0,remoteLast:null,localDirty:false,conflict:null,resolving:false,pendingResolution:'',pushInFlight:false,pushToken:0,pushWatch:null};
+var SYNC={ref:null,connRef:null,probeRef:null,probeLast:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,retryTimer:null,started:false,starting:false,gotRemote:false,lastToastAt:0,remoteLast:null,localDirty:false,conflict:null,resolving:false,pendingResolution:'',pushInFlight:false,pushToken:0,pushWatch:null};
 var DIRTY_KEY='guimas_semanal_dirty_v37',DIRTY_SIG_KEY='guimas_semanal_dirty_sig_v43',RESOLVED_KEY='guimas_semanal_sync_v37_resolved',PENDING_RESOLVE_KEY='guimas_semanal_resolve_v38';
 try{SYNC.localDirty=localStorage.getItem(DIRTY_KEY)==='1'}catch(e){}
 try{
@@ -1635,7 +1635,7 @@ function _canonBusiness(x){
  if(Array.isArray(x)){var a=x.map(_canonBusiness);a.sort(function(u,v){var A=JSON.stringify(u),B=JSON.stringify(v);return A<B?-1:(A>B?1:0)});return a}
  if(x&&typeof x==='object'){
   var o={};Object.keys(x).sort().forEach(function(k){
-   if(k==='rev'||k==='dev'||k==='at'||k==='by'||k==='weekAt'||k==='resetAt'||k==='syncEpochV37'||k==='syncEpochV41'||k==='syncEpochV42'||k==='fm')return;
+   if(k==='rev'||k==='dev'||k==='at'||k==='by'||k==='weekAt'||k==='resetAt'||k==='syncEpochV37'||k==='syncEpochV41'||k==='syncEpochV42'||k==='syncProbe'||k==='fm')return;
    var v=_canonBusiness(x[k]);
    /* v46: Firebase pode devolver coleções vazias como campo ausente. Para o conteúdo
       funcional do Semanal, entries/notes/etc. vazios e ausentes significam a mesma
@@ -1705,9 +1705,14 @@ function startSync(){
   /* Nunca acumular listeners em reconexões sucessivas. */
   try{if(SYNC.ref)SYNC.ref.off()}catch(e){}
   try{if(SYNC.connRef)SYNC.connRef.off()}catch(e){}
+  try{if(SYNC.probeRef)SYNC.probeRef.off()}catch(e){}
   SYNC.ref=db.ref('familias/'+h+'/estado');
+  /* v47: o teste entre aparelhos usa um nó técnico SEPARADO do estado financeiro.
+     Assim ele nunca marca pagamento/histórico como dirty nem participa do merge. */
+  SYNC.probeRef=db.ref('familias/'+h+'/probeV47');
   SYNC.connRef=db.ref('.info/connected');
   SYNC.gotRemote=false;
+  SYNC.probeRef.on('value',function(snap){_onProbeV47(snap&&snap.val?snap.val():null)},function(){});
   SYNC.ref.on('value',function(snap){
    var v=snap.val();SYNC.gotRemote=true;
    if(!v){SYNC.pendingPush=true;_setDirty(true);push();return}
@@ -1792,40 +1797,48 @@ function _syncResumo(st){
  var t=totals(_active(st&&st.drivers));
  return 'Semana '+String(st&&st.week||'—')+' · Recebido '+fmt(t.paid)+' · Pendente '+fmt(t.pend)+' · Total '+fmt(t.all);
 }
-var PROBE_SENT_KEY='guimas_semanal_probe_sent_v43',PROBE_SEEN_KEY='guimas_semanal_probe_seen_v43';
+var PROBE_SENT_KEY='guimas_semanal_probe_sent_v47',PROBE_SEEN_KEY='guimas_semanal_probe_seen_v47';
 function _probeStatus(txt){
  try{var el=document.getElementById('syncTestStatus');if(el)el.textContent=txt}catch(e){}
 }
-function enviarTesteSyncSeguro(){
- if(!SYNC.ref||!SYNC.online||!SYNC.gotRemote){toast('⚠️ Aguarde a conexão com a nuvem');return}
- if(SYNC.localDirty||SYNC.pendingPush||SYNC.pushInFlight||!SYNC.remoteLast||!_businessIgual(state,SYNC.remoteLast)){
-  toast('⚠️ Aguarde ficar 🟢 sincronizado antes do teste');return;
- }
- var id='probe_'+DEV.slice(0,6)+'_'+_ag();
- state.syncProbe={id:id,from:DEV,createdAt:_ag(),ackBy:'',ackAt:0,seq:1,at:_ag(),by:DEV};
- try{localStorage.setItem(PROBE_SENT_KEY,id)}catch(e){}
- _lastUserBusinessSig='';save();_probeStatus('Teste enviado. Aguardando o outro iPhone receber e responder automaticamente…');
-}
-function _processSyncProbe(){
- var p=state&&state.syncProbe;if(!p||!p.id)return;
+function _onProbeV47(p){
+ SYNC.probeLast=(p&&typeof p==='object')?p:null;
+ if(!p||!p.id)return;
  var sent='';try{sent=localStorage.getItem(PROBE_SENT_KEY)||''}catch(e){}
  if(p.from===DEV&&p.id===sent&&p.ackBy&&p.ackBy!==DEV){
   var seen='';try{seen=localStorage.getItem(PROBE_SEEN_KEY)||''}catch(e){}
-  if(seen!==p.id){
-   try{localStorage.setItem(PROBE_SEEN_KEY,p.id)}catch(e){}
-   _probeStatus('✅ TESTE COMPLETO: ida e volta confirmadas entre os dois iPhones.');
-   toast('✅ Sincronização de ida e volta confirmada');
-  }
+  if(seen!==p.id){try{localStorage.setItem(PROBE_SEEN_KEY,p.id)}catch(e){}}
+  _probeStatus('✅ TESTE COMPLETO: ida e volta confirmadas entre os dois iPhones.');
+  toast('✅ Sincronização de ida e volta confirmada');
   return;
  }
- if(p.from!==DEV&&!p.ackBy){
-  /* O segundo aparelho recebeu o probe pelo listener real. Responde no MESMO nó,
-     exercitando também o caminho de escrita/ACK de volta. */
-  p.ackBy=DEV;p.ackAt=_ag();p.seq=(Number(p.seq)||0)+1;p.at=_ag();p.by=DEV;
-  _lastUserBusinessSig='';save();
-  _probeStatus('✅ Teste recebido. Resposta automática enviada ao outro iPhone.');
+ if(p.from!==DEV&&!p.ackBy&&SYNC.probeRef){
+  var id=String(p.id),fim=false;
+  SYNC.probeRef.transaction(function(cur){
+   if(!cur||String(cur.id||'')!==id||cur.ackBy)return;
+   cur.ackBy=DEV;cur.ackAt=_ag();return cur;
+  },function(err,committed){
+   if(fim)return;fim=true;
+   if(!err&&committed)_probeStatus('✅ Teste recebido. Resposta automática enviada ao outro iPhone.');
+  },false);
  }
 }
+function enviarTesteSyncSeguro(){
+ if(!SYNC.ref||!SYNC.probeRef||!SYNC.online||!SYNC.gotRemote){toast('⚠️ Aguarde a conexão com a nuvem');return}
+ if(SYNC.localDirty||SYNC.pendingPush||SYNC.pushInFlight||!SYNC.remoteLast||!_businessIgual(state,SYNC.remoteLast)){
+  toast('⚠️ Aguarde ficar 🟢 sincronizado antes do teste');return;
+ }
+ var id='probe47_'+DEV.slice(0,6)+'_'+_ag(),payload={id:id,from:DEV,createdAt:_ag()};
+ try{localStorage.setItem(PROBE_SENT_KEY,id)}catch(e){}
+ _probeStatus('Teste enviado. Aguardando o outro iPhone receber e responder automaticamente…');
+ try{
+  SYNC.probeRef.set(payload,function(err){
+   if(err)_probeStatus('❌ Falha ao enviar o teste: '+String(err&&err.message||err));
+  });
+ }catch(e){_probeStatus('❌ Falha ao iniciar o teste: '+String(e&&e.message||e))}
+}
+/* Compatibilidade: chamadas antigas não devem tocar no estado financeiro. */
+function _processSyncProbe(){return}
 
 function _mostrarConflitoSync(local,rem){
  SYNC.conflict={local:norm(JSON.parse(JSON.stringify(local))),remote:norm(JSON.parse(JSON.stringify(rem)))};
@@ -2023,8 +2036,8 @@ function openSync(){
       ?'Confirmado: este iPhone está igual à nuvem e não há gravações pendentes.'
       :(SYNC.online?'Conectado, mas ainda há conteúdo aguardando confirmação da nuvem.':'Offline: alterações locais permanecem na fila persistente e serão reenviadas ao reconectar.'))
    :'Sem sincronização: os dados ficam só neste aparelho. Cole a configuração do Firebase e crie uma chave da família (a mesma nos dois iPhones).';
- var p=state&&state.syncProbe;
- if(p&&p.from===DEV&&p.ackBy)_probeStatus('✅ Último teste: ida e volta confirmadas.');
+ var p=SYNC.probeLast,sent='';try{sent=localStorage.getItem(PROBE_SENT_KEY)||''}catch(e){}
+ if(p&&p.from===DEV&&p.id===sent&&p.ackBy&&p.ackBy!==DEV)_probeStatus('✅ Último teste: ida e volta confirmadas.');
  else if(p&&p.from!==DEV&&p.ackBy===DEV)_probeStatus('✅ Último teste recebido e respondido por este iPhone.');
  else _probeStatus('Teste entre aparelhos: pronto para executar.');
  if(cfg){document.getElementById('syncCfgInput').value=JSON.stringify(cfg.config,null,1);document.getElementById('syncKeyInput').value=cfg.key||''}
@@ -2056,7 +2069,8 @@ function disableSync(){
   localStorage.removeItem('guimas_sync');
   if(SYNC.ref){try{SYNC.ref.off()}catch(e){}}
   if(SYNC.connRef){try{SYNC.connRef.off()}catch(e){}}
-  SYNC.ref=null;SYNC.connRef=null;SYNC.online=false;
+  if(SYNC.probeRef){try{SYNC.probeRef.off()}catch(e){}}
+  SYNC.ref=null;SYNC.connRef=null;SYNC.probeRef=null;SYNC.probeLast=null;SYNC.online=false;
   setPill('','⚪ sem sync');
   document.getElementById('ovSync').classList.remove('open');
  });
