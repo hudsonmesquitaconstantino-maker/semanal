@@ -525,7 +525,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=44; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=45; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -1492,14 +1492,14 @@ function executarDiagnosticoNuvem(){
  if(btn)btn.disabled=true;if(btnNormal)btnNormal.disabled=true;
  var diagMsg='Executando diagnóstico: conexão → leitura → transação sem alteração…';
  _syncResolutionStatus(diagMsg,true);_probeStatus(diagMsg);
- var inicio=Date.now(),cfg=syncCfg(),dirtyStored='',dirtySigStored='';
+ var inicio=Date.now(),cfg=syncCfg(),dirtyStored='',dirtySigStored='',localSnap=norm(JSON.parse(JSON.stringify(state)));
  try{dirtyStored=localStorage.getItem(DIRTY_KEY)||'';dirtySigStored=localStorage.getItem(DIRTY_SIG_KEY)||''}catch(e){}
  var rel={
   appVer:APP_VER,
   geradoEm:new Date().toISOString(),
   dev:DEV,
-  localResumo:_syncResumo(state),
-  localRev:Number(state&&state.rev)||0,
+  localResumo:_syncResumo(localSnap),
+  localRev:Number(localSnap&&localSnap.rev)||0,
   onlineFlag:!!SYNC.online,
   gotRemote:!!SYNC.gotRemote,
   localDirty:!!SYNC.localDirty,
@@ -1519,6 +1519,12 @@ function executarDiagnosticoNuvem(){
   cloudRev:0,
   cloudDev:'',
   localIgualCloud:false,
+  mergeResumo:'',
+  mergeIgualCloud:false,
+  mergeIgualLocal:false,
+  mergeWouldWrite:false,
+  localState:localSnap,
+  cloudState:null,
   transactionOk:false,
   transactionCommitted:false,
   transactionErro:'',
@@ -1531,7 +1537,7 @@ function executarDiagnosticoNuvem(){
   var falhaIni='Diagnóstico falhou antes da leitura: referência/configuração indisponível.';
   _syncResolutionStatus(falhaIni,false);_probeStatus(falhaIni);
   if(btn)btn.disabled=false;if(btnNormal)btnNormal.disabled=false;
-  _diagDownload(rel,'diagnostico-nuvem-v40-'+String(DEV).slice(0,8)+'.json');
+  _diagDownload(rel,'diagnostico-nuvem-v45-'+String(DEV).slice(0,8)+'.json');
   return;
  }
  famHash(cfg.key).then(function(h){
@@ -1543,7 +1549,13 @@ function executarDiagnosticoNuvem(){
   rel.cloudResumo=_syncResumo(cloud);
   rel.cloudRev=Number(cloud.rev)||0;
   rel.cloudDev=String(cloud.dev||'');
-  rel.localIgualCloud=_businessIgual(state,cloud);
+  rel.cloudState=cloud;
+  rel.localIgualCloud=_businessIgual(localSnap,cloud);
+  var merged=_mergeState(cloud,localSnap);
+  rel.mergeResumo=_syncResumo(merged);
+  rel.mergeIgualCloud=_businessIgual(merged,cloud);
+  rel.mergeIgualLocal=_businessIgual(merged,localSnap);
+  rel.mergeWouldWrite=!rel.mergeIgualCloud;
   /* Teste no MESMO nó financeiro, mas retorna exatamente cur.
      Serve apenas para obter ACK/erro da transação no caminho real. */
   var txIni=Date.now();
@@ -1567,7 +1579,7 @@ function executarDiagnosticoNuvem(){
   rel.readErro=String(e&&e.code||e&&e.message||e);
  }).then(function(){
   rel.totalMs=Date.now()-inicio;
-  var nome='diagnostico-nuvem-v40-'+String(DEV).slice(0,8)+'-'+Date.now()+'.json';
+  var nome='diagnostico-nuvem-v45-'+String(DEV).slice(0,8)+'-'+Date.now()+'.json';
   var fimMsg=rel.readOk
    ?('Diagnóstico concluído. Nuvem: '+rel.cloudResumo+' · transação: '+(rel.transactionOk?'ACK recebido':'FALHOU')+'. Salve/compartilhe o arquivo.')
    :('Diagnóstico concluído com falha de leitura: '+rel.readErro);
