@@ -525,7 +525,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=47; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=48; var APP_DATE='10/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -1291,7 +1291,7 @@ document.getElementById('weekLabel').addEventListener('click',function(){toast('
 
 /* ================= SINCRONIZAÇÃO (Firebase Realtime Database) ================= */
 var DEV=(function(){try{var d=localStorage.getItem('guimas_dev');if(!d){d=uid()+uid();localStorage.setItem('guimas_dev',d)}return d}catch(e){return uid()}})();
-var SYNC={ref:null,connRef:null,probeRef:null,probeLast:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,retryTimer:null,started:false,starting:false,gotRemote:false,lastToastAt:0,remoteLast:null,localDirty:false,conflict:null,resolving:false,pendingResolution:'',pushInFlight:false,pushToken:0,pushWatch:null};
+var SYNC={ref:null,connRef:null,probeRef:null,probeLast:null,online:false,pendingPush:false,pendingRemote:null,pendingRemoteAt:0,renderDeferred:false,pushTimer:null,retryTimer:null,started:false,starting:false,gotRemote:false,lastToastAt:0,remoteLast:null,localDirty:false,conflict:null,resolving:false,pendingResolution:'',pushInFlight:false,pushToken:0,pushWatch:null};
 var DIRTY_KEY='guimas_semanal_dirty_v37',DIRTY_SIG_KEY='guimas_semanal_dirty_sig_v43',RESOLVED_KEY='guimas_semanal_sync_v37_resolved',PENDING_RESOLVE_KEY='guimas_semanal_resolve_v38';
 try{SYNC.localDirty=localStorage.getItem(DIRTY_KEY)==='1'}catch(e){}
 try{
@@ -1314,7 +1314,7 @@ function _refreshSyncPill(){
  var igual=SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast);
  if(CRIT&&CRIT.busy){setPill('wait','🟡 operação crítica…');return}
  if(SYNC.pushInFlight){setPill('wait','🟡 enviando…');return}
- if(SYNC.localDirty||SYNC.pendingPush||!igual){setPill('wait','🟡 sincronizando…');return}
+ if(SYNC.localDirty||SYNC.pendingPush||SYNC.pendingRemote||SYNC.renderDeferred||!igual){setPill('wait','🟡 sincronizando…');return}
  setPill('on','🟢 sincronizado');
 }
 function _syncResolutionStatus(txt,busy){
@@ -1707,9 +1707,9 @@ function startSync(){
   try{if(SYNC.connRef)SYNC.connRef.off()}catch(e){}
   try{if(SYNC.probeRef)SYNC.probeRef.off()}catch(e){}
   SYNC.ref=db.ref('familias/'+h+'/estado');
-  /* v47: o teste entre aparelhos usa um nó técnico SEPARADO do estado financeiro.
+  /* v48: o teste entre aparelhos usa um nó técnico SEPARADO do estado financeiro.
      Assim ele nunca marca pagamento/histórico como dirty nem participa do merge. */
-  SYNC.probeRef=db.ref('familias/'+h+'/probeV47');
+  SYNC.probeRef=db.ref('familias/'+h+'/probeV48');
   SYNC.connRef=db.ref('.info/connected');
   SYNC.gotRemote=false;
   SYNC.probeRef.on('value',function(snap){_onProbeV47(snap&&snap.val?snap.val():null)},function(){});
@@ -1797,7 +1797,7 @@ function _syncResumo(st){
  var t=totals(_active(st&&st.drivers));
  return 'Semana '+String(st&&st.week||'—')+' · Recebido '+fmt(t.paid)+' · Pendente '+fmt(t.pend)+' · Total '+fmt(t.all);
 }
-var PROBE_SENT_KEY='guimas_semanal_probe_sent_v47',PROBE_SEEN_KEY='guimas_semanal_probe_seen_v47';
+var PROBE_SENT_KEY='guimas_semanal_probe_sent_v48',PROBE_SEEN_KEY='guimas_semanal_probe_seen_v48';
 function _probeStatus(txt){
  try{var el=document.getElementById('syncTestStatus');if(el)el.textContent=txt}catch(e){}
 }
@@ -1828,7 +1828,7 @@ function enviarTesteSyncSeguro(){
  if(SYNC.localDirty||SYNC.pendingPush||SYNC.pushInFlight||!SYNC.remoteLast||!_businessIgual(state,SYNC.remoteLast)){
   toast('⚠️ Aguarde ficar 🟢 sincronizado antes do teste');return;
  }
- var id='probe47_'+DEV.slice(0,6)+'_'+_ag(),payload={id:id,from:DEV,createdAt:_ag()};
+ var id='probe48_'+DEV.slice(0,6)+'_'+_ag(),payload={id:id,from:DEV,createdAt:_ag()};
  try{localStorage.setItem(PROBE_SENT_KEY,id)}catch(e){}
  _probeStatus('Teste enviado. Aguardando o outro iPhone receber e responder automaticamente…');
  try{
@@ -1874,10 +1874,11 @@ function onRemote(v){
   filter='all';render();_processSyncProbe();_refreshSyncPill();return;
  }
 
- if(inputFocused()){
-  SYNC.pendingRemote=SYNC.pendingRemote?_mergeState(SYNC.pendingRemote,rem):rem;
-  _refreshSyncPill();return;
- }
+ /* v48: nunca bloqueia a chegada do estado remoto só porque um input ficou focado.
+    No iOS, activeElement pode continuar sendo INPUT mesmo depois de o teclado fechar.
+    A v47 deixava o snapshot preso em pendingRemote indefinidamente nesse caso.
+    Agora o merge entra imediatamente em memória/localStorage; apenas o RENDER visual
+    pode ser adiado enquanto o usuário está digitando. */
  adopt(rem);
 }
 
@@ -1891,7 +1892,15 @@ function adopt(v){
   _refreshSyncPill();return;
  }
  if(mudaMeta){state=junto;persist(false)}
- if(mudaDados){if(!inputFocused())_lastUserBusinessSig=_businessSig(state);filter='all';render();_toastSync()}
+ if(mudaDados){
+  _lastUserBusinessSig=_businessSig(state);
+  if(inputFocused()){
+   /* Estado já está atualizado; só não recria os inputs no meio da digitação. */
+   SYNC.renderDeferred=true;SYNC.pendingRemoteAt=_ag();
+  }else{
+   SYNC.renderDeferred=false;filter='all';render();_toastSync();
+  }
+ }
  if(precisaNuvem){if(!mudaMeta)state=junto;touch();persist(false);SYNC.pendingPush=true;schedulePush()}
  else if(_businessIgual(state,rem)){SYNC.pendingPush=false;_setDirty(false)}
  _processSyncProbe();
@@ -1999,7 +2008,21 @@ function _resolverSyncNuvemAgora(){
   setPill('wait','🟡 aguardando nuvem…');
  }
 }
-setInterval(function(){ if(SYNC.pendingRemote&&!inputFocused()) adopt(SYNC.pendingRemote); },1500);
+/* v48: o estado remoto já é incorporado na hora. Se a tela foi preservada por causa
+   de digitação, redesenha assim que o campo perde foco. Como proteção específica para
+   iOS, se o navegador mantiver um INPUT artificialmente focado sem nenhuma digitação
+   recente, o redraw é liberado após 4 s. */
+var _v48LastInputAt=0;
+try{
+ document.addEventListener('input',function(){_v48LastInputAt=_ag()},true);
+ document.addEventListener('focusout',function(){setTimeout(function(){if(SYNC.renderDeferred){SYNC.renderDeferred=false;filter='all';render();_toastSync();_refreshSyncPill()}},80)},true);
+}catch(e){}
+setInterval(function(){
+ if(!SYNC.renderDeferred)return;
+ if(!inputFocused()||(_ag()-_v48LastInputAt>4000)){
+  SYNC.renderDeferred=false;filter='all';render();_toastSync();_refreshSyncPill();
+ }
+},500);
 /* v41: watchdog financeiro. Se existe dado local não confirmado, tenta novamente
    enquanto o app estiver aberto e online. Nunca depende de a conexão cair/subir. */
 setInterval(function(){
@@ -2025,14 +2048,14 @@ try{
  window.addEventListener('online',function(){setTimeout(_resyncSemanalAgora,100)});
  window.addEventListener('focus',function(){setTimeout(_resyncSemanalAgora,250)});
 }catch(e){}
-setInterval(function(){if(document.visibilityState==='visible'&&SYNC.online)_resyncSemanalAgora()},30000);
+setInterval(function(){if(document.visibilityState==='visible'&&SYNC.online)_resyncSemanalAgora()},15000);
 
 function openSync(){
  var cfg=syncCfg();
  var igual=SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast);
  document.getElementById('syncStatusMsg').textContent=
   cfg&&cfg.config
-   ?(SYNC.online&&igual&&!SYNC.localDirty&&!SYNC.pendingPush&&!SYNC.pushInFlight
+   ?(SYNC.online&&igual&&!SYNC.localDirty&&!SYNC.pendingPush&&!SYNC.pushInFlight&&!SYNC.pendingRemote&&!SYNC.renderDeferred
       ?'Confirmado: este iPhone está igual à nuvem e não há gravações pendentes.'
       :(SYNC.online?'Conectado, mas ainda há conteúdo aguardando confirmação da nuvem.':'Offline: alterações locais permanecem na fila persistente e serão reenviadas ao reconectar.'))
    :'Sem sincronização: os dados ficam só neste aparelho. Cole a configuração do Firebase e crie uma chave da família (a mesma nos dois iPhones).';
@@ -2078,7 +2101,7 @@ function disableSync(){
 
 /* Modo offline permanente (ativa quando hospedado, ex.: GitHub Pages) */
 if('serviceWorker' in navigator){
- try{navigator.serviceWorker.register('./SW.js',{updateViaCache:'none'}).then(function(r){try{r.update()}catch(e){}}).catch(function(){navigator.serviceWorker.register('./SW.js').catch(function(){})})}catch(e){}
+ try{navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(function(r){try{r.update()}catch(e){}}).catch(function(){navigator.serviceWorker.register('./sw.js').catch(function(){})})}catch(e){}
 }
 
 load();
