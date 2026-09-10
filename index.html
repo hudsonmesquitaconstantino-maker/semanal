@@ -525,7 +525,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=45; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=46; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -1633,7 +1633,19 @@ function _syncIgual(a,b){return _syncSig(a)===_syncSig(b)}
    criar ping-pong entre versões diferentes do app. Tombstones (del) continuam entrando. */
 function _canonBusiness(x){
  if(Array.isArray(x)){var a=x.map(_canonBusiness);a.sort(function(u,v){var A=JSON.stringify(u),B=JSON.stringify(v);return A<B?-1:(A>B?1:0)});return a}
- if(x&&typeof x==='object'){var o={};Object.keys(x).sort().forEach(function(k){if(k==='rev'||k==='dev'||k==='at'||k==='by'||k==='weekAt'||k==='resetAt'||k==='syncEpochV37'||k==='syncEpochV41'||k==='syncEpochV42'||k==='fm')return;o[k]=_canonBusiness(x[k])});return o}
+ if(x&&typeof x==='object'){
+  var o={};Object.keys(x).sort().forEach(function(k){
+   if(k==='rev'||k==='dev'||k==='at'||k==='by'||k==='weekAt'||k==='resetAt'||k==='syncEpochV37'||k==='syncEpochV41'||k==='syncEpochV42'||k==='fm')return;
+   var v=_canonBusiness(x[k]);
+   /* v46: Firebase pode devolver coleções vazias como campo ausente. Para o conteúdo
+      funcional do Semanal, entries/notes/etc. vazios e ausentes significam a mesma
+      coisa. Ignorar recipientes vazios evita o ciclo merge -> grava -> Firebase omite
+      vazio -> falsa divergência -> grava novamente. */
+   if(Array.isArray(v)&&v.length===0)return;
+   if(v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===0)return;
+   o[k]=v;
+  });return o
+ }
  return x;
 }
 function _businessSig(x){return JSON.stringify(_canonBusiness(x||{}))}
