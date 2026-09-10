@@ -457,6 +457,9 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
     <button class="close" onclick="document.getElementById('ovSync').classList.remove('open')">✕</button>
     <h3>Sincronização entre aparelhos</h3>
     <div class="askMsg" id="syncStatusMsg"></div>
+    <div class="pprev" id="syncTestStatus" style="margin:10px 0">Teste entre aparelhos: ainda não executado.</div>
+    <button class="btn primary" onclick="enviarTesteSyncSeguro()">🧪 Testar ida e volta entre iPhones</button>
+    <div class="askMsg" style="margin:8px 0 14px">Este teste usa o mesmo nó do Semanal, mas não altera nenhum motorista, pagamento, total ou histórico.</div>
     <div class="synclbl">Configuração do Firebase (cole aqui)</div>
     <textarea class="syncfield" id="syncCfgInput" placeholder='{ "apiKey": "...", "databaseURL": "...", ... }'></textarea>
     <div class="synclbl">Chave da família (a mesma nos dois iPhones)</div>
@@ -470,7 +473,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <div class="overlay" id="ovSyncConflict">
   <div class="sheet">
-    <h3>⚠️ Divergência entre aparelhos</h3>
+    <h3>⚠️ Ferramenta de recuperação antiga</h3>
     <div class="askMsg">O Semanal deste iPhone está diferente da cópia salva na nuvem. Para não perder dinheiro, o app não vai misturar os dois automaticamente.</div>
     <div id="syncConflictLocal" class="pprev" style="margin:10px 0"></div>
     <div id="syncConflictCloud" class="pprev" style="margin:10px 0"></div>
@@ -521,7 +524,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=42; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=43; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -771,7 +774,7 @@ function _mergeState(a,b){
      (semana nova zerada). O que faltou entra no histórico no próximo sync, quando o
      registro da semana fechada já tiver chegado. Isso elimina o "tudo pago". */
  }
- out.resetAt=reset;out.syncEpochV37=Math.max(Number(a.syncEpochV37)||0,Number(b.syncEpochV37)||0);out.syncEpochV41=Math.max(Number(a.syncEpochV41)||0,Number(b.syncEpochV41)||0);out.syncEpochV42=Math.max(Number(a.syncEpochV42)||0,Number(b.syncEpochV42)||0);if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
+ out.resetAt=reset;out.syncEpochV37=Math.max(Number(a.syncEpochV37)||0,Number(b.syncEpochV37)||0);out.syncEpochV41=Math.max(Number(a.syncEpochV41)||0,Number(b.syncEpochV41)||0);out.syncEpochV42=Math.max(Number(a.syncEpochV42)||0,Number(b.syncEpochV42)||0);out.syncProbe=_newer(a.syncProbe,b.syncProbe)||null;if(reset){out.drivers=clip({drivers:out.drivers,history:[]}).drivers;out.history=toArr(out.history).filter(function(w){return (Number(w&&w.at)||0)>=reset})}
  out.rev=Math.max(Number(a.rev)||0,Number(b.rev)||0);out.dev=(Number(b.rev)||0)>(Number(a.rev)||0)?b.dev:((Number(b.rev)||0)<(Number(a.rev)||0)?a.dev:(String(b.dev||'')>String(a.dev||'')?b.dev:a.dev));_limparFechamentosFantasma26Em(out);_repararFechamento0209Em(out);return norm(out);
 }
 
@@ -851,7 +854,7 @@ function persist(userAction){
  try{
    var raw=JSON.stringify(state);
    if(raw!==_lastPersistRaw){localStorage.setItem(KEY,raw);_lastPersistRaw=raw}
-   if(userAction)_setSaved('Salvo ✓');
+   if(userAction)_setSaved('No iPhone ✓');
  }catch(e){ toast('⚠️ Falha ao salvar. Exporte um backup!'); }
 }
 function save(){
@@ -1050,33 +1053,57 @@ function _proxSemanaLabel(week,ref){
  }
  var y=ref.getFullYear(),base=new Date(y,m-1,d);if(base-ref>120*86400000)base=new Date(y-1,m-1,d);else if(ref-base>300*86400000)base=new Date(y+1,m-1,d);base.setDate(base.getDate()+7);return ('0'+base.getDate()).slice(-2)+'/'+('0'+(base.getMonth()+1)).slice(-2)
 }
-var CRIT={busy:false,label:''};
+var CRIT={busy:false,label:'',token:0,timer:null};
 function _critReady(label){
  if(CRIT.busy){toast('⏳ Operação crítica em andamento');return false}
- if(!SYNC.ref||!SYNC.gotRemote||!SYNC.online){toast('⛔ '+label+' só pode ser feito com a sincronização verde');return false}
+ var igual=SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast);
+ if(!SYNC.ref||!SYNC.gotRemote||!SYNC.online||SYNC.localDirty||SYNC.pendingPush||SYNC.pushInFlight||!igual){
+  toast('⛔ '+label+' só pode ser feito quando estiver 🟢 sincronizado');return false;
+ }
  if(inputFocused()){toast('⚠️ Termine a edição do campo antes de '+label.toLowerCase());return false}
  return true;
 }
 function _critTxn(label,mutator,okMsg){
  if(!_critReady(label))return;
- CRIT.busy=true;CRIT.label=label;setPill('wait','🟡 conferindo nuvem…');
- var motivo='';
- SYNC.ref.transaction(function(cur){
-  if(!cur){motivo='A nuvem ainda não possui uma base válida.';return}
-  var base=_mergeState(norm(cur),norm(state));
-  var r=mutator(base);if(r!==true){motivo=String(r||'Conflito entre aparelhos.');return}
-  base.rev=Math.max(_ag(),Number(base.rev)||0,Number(cur&&cur.rev)||0);base.dev=DEV;return norm(base);
- },function(err,committed,snap){
-  CRIT.busy=false;CRIT.label='';_refreshSyncPill();
-  if(err){toast('⛔ '+label+' falhou: '+err.message);return}
-  if(!committed){
-   if(snap&&snap.val())adopt(snap.val());
-   toast('⛔ '+(motivo||label+' cancelado para proteger os dados'));return;
+ CRIT.busy=true;CRIT.label=label;var token=++CRIT.token,motivo='',finished=false;
+ setPill('wait','🟡 conferindo nuvem…');
+ clearTimeout(CRIT.timer);
+ CRIT.timer=setTimeout(function(){
+  if(finished||token!==CRIT.token)return;
+  finished=true;CRIT.busy=false;CRIT.label='';CRIT.token++;
+  setPill('wait','🟡 conferindo resultado…');
+  toast('⚠️ '+label+' ainda não foi confirmado. Não repita agora.');
+  try{SYNC.ref.once('value').then(function(s){if(s&&s.val())onRemote(s.val())}).catch(function(){})}catch(e){}
+ },10000);
+ try{
+  SYNC.ref.transaction(function(cur){
+   if(!cur){motivo='A nuvem ainda não possui uma base válida.';return}
+   var base=_mergeState(norm(cur),norm(state)),r;
+   try{r=mutator(base)}catch(e){motivo='Erro interno: '+String(e&&e.message||e);return}
+   if(r!==true){motivo=String(r||'Conflito entre aparelhos.');return}
+   base.rev=Math.max(_ag(),Number(base.rev)||0,Number(cur&&cur.rev)||0);base.dev=DEV;return norm(base);
+  },function(err,committed,snap){
+   if(finished||token!==CRIT.token)return;
+   finished=true;clearTimeout(CRIT.timer);CRIT.busy=false;CRIT.label='';
+   if(err){_refreshSyncPill();toast('⛔ '+label+' falhou: '+String(err.message||err));return}
+   if(!committed){
+    if(snap&&snap.val())onRemote(snap.val());
+    _refreshSyncPill();toast('⛔ '+(motivo||label+' cancelado para proteger os dados'));return;
+   }
+   if(snap&&snap.val()){
+    state=norm(snap.val());SYNC.remoteLast=norm(snap.val());SYNC.pendingPush=false;
+    _lastUserBusinessSig=_businessSig(state);persist(false);_setDirty(false);filter='all';render();_processSyncProbe();
+   }
+   _refreshSyncPill();toast(okMsg);
+  },false);
+ }catch(e){
+  if(!finished&&token===CRIT.token){
+   finished=true;clearTimeout(CRIT.timer);CRIT.busy=false;CRIT.label='';_refreshSyncPill();
+   toast('⛔ '+label+' falhou antes da confirmação: '+String(e&&e.message||e));
   }
-  if(snap&&snap.val()){state=norm(snap.val());_lastUserBusinessSig=_businessSig(state);persist(false);filter='all';render()}
-  toast(okMsg);
- },false);
+ }
 }
+
 function _ativosDoEstado(st){return _active(st&&st.drivers)}
 function _temMovimentoEstado(st){return _ativosDoEstado(st).some(function(d){return entriesAtivas(d).some(function(e){return (Number(e.v)||0)!==0||String(e.d||'').trim()!==''})||notesAtivas(d).some(function(n){return String(n.t||'').trim()!==''})})}
 function _histAtivoEstado(st){return toArr(st&&st.history).filter(function(w){return w&&!w.del})}
@@ -1263,19 +1290,29 @@ document.getElementById('weekLabel').addEventListener('click',function(){toast('
 
 /* ================= SINCRONIZAÇÃO (Firebase Realtime Database) ================= */
 var DEV=(function(){try{var d=localStorage.getItem('guimas_dev');if(!d){d=uid()+uid();localStorage.setItem('guimas_dev',d)}return d}catch(e){return uid()}})();
-var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false,gotRemote:false,lastToastAt:0,remoteLast:null,localDirty:false,conflict:null,resolving:false,pendingResolution:''};
-var DIRTY_KEY='guimas_semanal_dirty_v37',RESOLVED_KEY='guimas_semanal_sync_v37_resolved',PENDING_RESOLVE_KEY='guimas_semanal_resolve_v38';
+var SYNC={ref:null,connRef:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,retryTimer:null,started:false,starting:false,gotRemote:false,lastToastAt:0,remoteLast:null,localDirty:false,conflict:null,resolving:false,pendingResolution:'',pushInFlight:false,pushToken:0,pushWatch:null};
+var DIRTY_KEY='guimas_semanal_dirty_v37',DIRTY_SIG_KEY='guimas_semanal_dirty_sig_v43',RESOLVED_KEY='guimas_semanal_sync_v37_resolved',PENDING_RESOLVE_KEY='guimas_semanal_resolve_v38';
 try{SYNC.localDirty=localStorage.getItem(DIRTY_KEY)==='1'}catch(e){}
 try{
  SYNC.pendingResolution='';
  localStorage.removeItem(PENDING_RESOLVE_KEY);
 }catch(e){}
-function _setDirty(v){SYNC.localDirty=!!v;try{localStorage.setItem(DIRTY_KEY,v?'1':'0')}catch(e){};_refreshSyncPill()}
+function _setDirty(v){
+ SYNC.localDirty=!!v;
+ try{
+  localStorage.setItem(DIRTY_KEY,v?'1':'0');
+  if(v)localStorage.setItem(DIRTY_SIG_KEY,_businessSig(state));else localStorage.removeItem(DIRTY_SIG_KEY);
+ }catch(e){}
+ if(v)_setSaved('Aguardando nuvem…');
+ else if(SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast))_setSaved('Confirmado ✓');
+ _refreshSyncPill();
+}
 function _refreshSyncPill(){
  if(!SYNC.ref){setPill('','⚪ sem sync');return}
  if(!SYNC.online){setPill('wait','🟡 offline — na fila');return}
- if(SYNC.conflict){setPill('wait','⚠️ divergência');return}
  var igual=SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast);
+ if(CRIT&&CRIT.busy){setPill('wait','🟡 operação crítica…');return}
+ if(SYNC.pushInFlight){setPill('wait','🟡 enviando…');return}
  if(SYNC.localDirty||SYNC.pendingPush||!igual){setPill('wait','🟡 sincronizando…');return}
  setPill('on','🟢 sincronizado');
 }
@@ -1588,7 +1625,7 @@ function toArr(x){
  return [];
 }
 function norm(s){
- if(!s||typeof s!=='object')s={};var o={week:(typeof s.week==='string'?s.week:''),weekAt:Number(s.weekAt)||0,resetAt:Number(s.resetAt)||0,syncEpochV37:Number(s.syncEpochV37)||0,syncEpochV41:Number(s.syncEpochV41)||0,syncEpochV42:Number(s.syncEpochV42)||0,rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
+ if(!s||typeof s!=='object')s={};var sp=(s.syncProbe&&typeof s.syncProbe==='object')?s.syncProbe:null;var o={week:(typeof s.week==='string'?s.week:''),weekAt:Number(s.weekAt)||0,resetAt:Number(s.resetAt)||0,syncEpochV37:Number(s.syncEpochV37)||0,syncEpochV41:Number(s.syncEpochV41)||0,syncEpochV42:Number(s.syncEpochV42)||0,syncProbe:sp?{id:String(sp.id||''),from:String(sp.from||''),createdAt:Number(sp.createdAt)||0,ackBy:String(sp.ackBy||''),ackAt:Number(sp.ackAt)||0,seq:Number(sp.seq)||0,at:Number(sp.at)||0,by:String(sp.by||'')}:null,rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
  toArr(s.drivers).forEach(function(d){if(!d)return;var dd={id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',ord:Number(d.ord)||0,fm:(d.fm&&typeof d.fm==='object'?JSON.parse(JSON.stringify(d.fm)):{}),seq:Number(d.seq)||0,at:Number(d.at)||0,by:d.by||'',del:!!d.del,delReason:d.delReason||'',entries:[],notes:[]};
   toArr(d.entries).forEach(function(e){if(e)dd.entries.push({id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),seq:Number(e.seq)||0,at:Number(e.at)||0,by:e.by||'',del:!!e.del,delReason:e.delReason||'',originCloseId:e.originCloseId||''})});
   toArr(d.notes).forEach(function(n){if(n)dd.notes.push({id:n.id||uid(),t:n.t||'',seq:Number(n.seq)||0,at:Number(n.at)||0,by:n.by||'',del:!!n.del,delReason:n.delReason||'',originCloseId:n.originCloseId||''})});o.drivers.push(dd)
@@ -1610,84 +1647,106 @@ function famHash(key){
  return crypto.subtle.digest('SHA-256',new TextEncoder().encode('guimas:'+key))
   .then(function(buf){return Array.prototype.map.call(new Uint8Array(buf),function(b){return ('0'+b.toString(16)).slice(-2)}).join('')});
 }
+function _scheduleStartSync(ms){
+ clearTimeout(SYNC.retryTimer);
+ SYNC.retryTimer=setTimeout(function(){startSync()},ms||5000);
+}
 function startSync(){
  var cfg=syncCfg();
  if(!cfg||!cfg.config||!cfg.key){setPill('','⚪ sem sync');return}
- setPill('wait','🟡 conectando…');
- var V='10.14.1', B='https://www.gstatic.com/firebasejs/'+V+'/';
- var chain=Promise.resolve();
+ if(SYNC.starting)return;
+ SYNC.starting=true;setPill('wait','🟡 conectando…');
+ var V='10.14.1',B='https://www.gstatic.com/firebasejs/'+V+'/',chain=Promise.resolve();
  if(typeof firebase==='undefined'){
   chain=loadScript(B+'firebase-app-compat.js')
    .then(function(){return loadScript(B+'firebase-auth-compat.js')})
    .then(function(){return loadScript(B+'firebase-database-compat.js')});
  }
  chain.then(function(){
-  if(!SYNC.started){firebase.initializeApp(cfg.config);SYNC.started=true;}
+  if(!SYNC.started){firebase.initializeApp(cfg.config);SYNC.started=true}
   return firebase.auth().signInAnonymously();
- }).then(function(){
-  return famHash(cfg.key);
- }).then(function(h){
-  SYNC.ref=firebase.database().ref('familias/'+h+'/estado');
-  SYNC.ref.on('value',function(snap){var v=snap.val();SYNC.gotRemote=true;
-   if(!v){push();return}
+ }).then(function(){return famHash(cfg.key)})
+ .then(function(h){
+  var db=firebase.database();
+  /* Nunca acumular listeners em reconexões sucessivas. */
+  try{if(SYNC.ref)SYNC.ref.off()}catch(e){}
+  try{if(SYNC.connRef)SYNC.connRef.off()}catch(e){}
+  SYNC.ref=db.ref('familias/'+h+'/estado');
+  SYNC.connRef=db.ref('.info/connected');
+  SYNC.gotRemote=false;
+  SYNC.ref.on('value',function(snap){
+   var v=snap.val();SYNC.gotRemote=true;
+   if(!v){SYNC.pendingPush=true;_setDirty(true);push();return}
    onRemote(v);
-  },function(err){
-   setPill('wait','🟡 reconectando…');
-   SYNC.pendingPush=true;
-   setTimeout(startSync,15000);
+  },function(){
+   SYNC.online=false;SYNC.pendingPush=SYNC.pendingPush||SYNC.localDirty;_refreshSyncPill();
+   _scheduleStartSync(5000);
   });
-  firebase.database().ref('.info/connected').on('value',function(s){
-   SYNC.online=!!s.val();
-   _refreshSyncPill();
-   if(SYNC.online&&SYNC.pendingResolution){/* v39 diagnóstico: resolução automática desativada */return}
-   if(SYNC.online&&SYNC.pendingPush&&!SYNC.conflict)push();
+  SYNC.connRef.on('value',function(s){
+   SYNC.online=!!s.val();_refreshSyncPill();
+   if(SYNC.online&&(SYNC.pendingPush||SYNC.localDirty)&&SYNC.gotRemote)push();
   });
- }).catch(function(err){
-  setPill('wait','🟡 offline — na fila');
-  SYNC.pendingPush=true;
-  setTimeout(startSync,20000);
+  SYNC.starting=false;clearTimeout(SYNC.retryTimer);
+ }).catch(function(){
+  SYNC.starting=false;SYNC.online=false;SYNC.pendingPush=SYNC.pendingPush||SYNC.localDirty;
+  _refreshSyncPill();_scheduleStartSync(5000);
  });
 }
+
 function push(){
- if(SYNC.conflict||SYNC.resolving){SYNC.pendingPush=true;_refreshSyncPill();return}
- if(!SYNC.ref||!SYNC.gotRemote){SYNC.pendingPush=true;_refreshSyncPill();return}
- SYNC.pendingPush=false;_refreshSyncPill();var local=norm(state);
- SYNC.ref.transaction(function(cur){
-  var junto=cur?_mergeState(cur,local):local;
-  /* Se o conteúdo funcional já é igual, não grava só para alinhar relógio/metadados.
-     Essa é a trava principal contra o loop recebe → grava → recebe. */
-  if(cur&&_businessIgual(junto,cur))return;
-  junto.rev=Math.max(_ag(),Number(local.rev)||0,Number(cur&&cur.rev)||0);junto.dev=DEV;return junto;
- },function(err,committed,snap){
-  if(err){
-   SYNC.pendingPush=true;_setDirty(true);_refreshSyncPill();
-   clearTimeout(SYNC.pushTimer);SYNC.pushTimer=setTimeout(push,1800);
-   return
-  }
-  if(!committed){
-   if(snap&&snap.val())SYNC.remoteLast=norm(snap.val());
-   if(SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast)){
-    SYNC.pendingPush=false;_setDirty(false);
-   }else{
-    /* no-op sem igualdade NÃO é sucesso. Mantém na fila e tenta novamente. */
-    SYNC.pendingPush=true;_setDirty(true);
-    clearTimeout(SYNC.pushTimer);SYNC.pushTimer=setTimeout(push,1200);
+ if(SYNC.resolving||CRIT.busy){SYNC.pendingPush=true;_refreshSyncPill();return}
+ if(SYNC.pushInFlight)return;
+ if(!SYNC.ref||!SYNC.gotRemote||!SYNC.online){SYNC.pendingPush=true;_refreshSyncPill();return}
+ SYNC.pushInFlight=true;SYNC.pendingPush=false;_refreshSyncPill();
+ var local=norm(JSON.parse(JSON.stringify(state))),token=++SYNC.pushToken,finished=false;
+ clearTimeout(SYNC.pushWatch);
+ SYNC.pushWatch=setTimeout(function(){
+  if(finished||token!==SYNC.pushToken)return;
+  finished=true;SYNC.pushInFlight=false;SYNC.pendingPush=true;_setDirty(true);
+  _refreshSyncPill();clearTimeout(SYNC.pushTimer);SYNC.pushTimer=setTimeout(push,1200);
+ },8000);
+ try{
+  SYNC.ref.transaction(function(cur){
+   var junto=cur?_mergeState(cur,local):local;
+   if(cur&&_businessIgual(junto,cur))return;
+   junto.rev=Math.max(_ag(),Number(local.rev)||0,Number(cur&&cur.rev)||0);junto.dev=DEV;return norm(junto);
+  },function(err,committed,snap){
+   if(finished||token!==SYNC.pushToken)return;
+   finished=true;clearTimeout(SYNC.pushWatch);SYNC.pushInFlight=false;
+   if(err){
+    SYNC.pendingPush=true;_setDirty(true);_refreshSyncPill();
+    clearTimeout(SYNC.pushTimer);SYNC.pushTimer=setTimeout(push,1500);return;
    }
-   _refreshSyncPill();return
-  }
-  if(snap&&snap.val()){
-   var remoto=norm(snap.val()),atual=norm(state),junto=_mergeState(remoto,atual);
-   SYNC.remoteLast=remoto;
-   var mudaDados=!_businessIgual(junto,atual),mudaMeta=!_syncIgual(junto,atual),precisaNuvem=!_businessIgual(junto,remoto);
-   if(mudaMeta){state=junto;persist(false);if(mudaDados&&!inputFocused()){_lastUserBusinessSig=_businessSig(state);render()}}
-   if(precisaNuvem){touch();persist(false);SYNC.pendingPush=true;schedulePush()}
-   else if(_businessIgual(state,remoto)){SYNC.pendingPush=false;_setDirty(false)}
+   if(snap&&snap.val())SYNC.remoteLast=norm(snap.val());
+   if(!committed){
+    if(SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast)){
+     SYNC.pendingPush=false;_setDirty(false);
+    }else{
+     /* no-op sem igualdade jamais é ACK */
+     SYNC.pendingPush=true;_setDirty(true);
+     clearTimeout(SYNC.pushTimer);SYNC.pushTimer=setTimeout(push,1000);
+    }
+    _refreshSyncPill();return;
+   }
+   if(SYNC.remoteLast){
+    var remoto=SYNC.remoteLast,atual=norm(state),junto=_mergeState(remoto,atual);
+    var mudaDados=!_businessIgual(junto,atual),mudaMeta=!_syncIgual(junto,atual),precisa=!_businessIgual(junto,remoto);
+    if(mudaMeta){state=junto;persist(false);if(mudaDados&&!inputFocused()){_lastUserBusinessSig=_businessSig(state);render()}}
+    if(precisa){touch();persist(false);SYNC.pendingPush=true;_setDirty(true);schedulePush()}
+    else if(_businessIgual(state,remoto)){SYNC.pendingPush=false;_setDirty(false)}
+   }
    _refreshSyncPill();
+  },false);
+ }catch(e){
+  if(!finished&&token===SYNC.pushToken){
+   finished=true;clearTimeout(SYNC.pushWatch);SYNC.pushInFlight=false;SYNC.pendingPush=true;_setDirty(true);
+   _refreshSyncPill();clearTimeout(SYNC.pushTimer);SYNC.pushTimer=setTimeout(push,1500);
   }
- },false);
+ }
 }
+
 function schedulePush(){
- SYNC.pendingPush=true;_refreshSyncPill();
+ SYNC.pendingPush=true;_setDirty(true);_refreshSyncPill();
  clearTimeout(SYNC.pushTimer);
  SYNC.pushTimer=setTimeout(push,120);
 }
@@ -1699,6 +1758,41 @@ function _syncResumo(st){
  var t=totals(_active(st&&st.drivers));
  return 'Semana '+String(st&&st.week||'—')+' · Recebido '+fmt(t.paid)+' · Pendente '+fmt(t.pend)+' · Total '+fmt(t.all);
 }
+var PROBE_SENT_KEY='guimas_semanal_probe_sent_v43',PROBE_SEEN_KEY='guimas_semanal_probe_seen_v43';
+function _probeStatus(txt){
+ try{var el=document.getElementById('syncTestStatus');if(el)el.textContent=txt}catch(e){}
+}
+function enviarTesteSyncSeguro(){
+ if(!SYNC.ref||!SYNC.online||!SYNC.gotRemote){toast('⚠️ Aguarde a conexão com a nuvem');return}
+ if(SYNC.localDirty||SYNC.pendingPush||SYNC.pushInFlight||!SYNC.remoteLast||!_businessIgual(state,SYNC.remoteLast)){
+  toast('⚠️ Aguarde ficar 🟢 sincronizado antes do teste');return;
+ }
+ var id='probe_'+DEV.slice(0,6)+'_'+_ag();
+ state.syncProbe={id:id,from:DEV,createdAt:_ag(),ackBy:'',ackAt:0,seq:1,at:_ag(),by:DEV};
+ try{localStorage.setItem(PROBE_SENT_KEY,id)}catch(e){}
+ _lastUserBusinessSig='';save();_probeStatus('Teste enviado. Aguardando o outro iPhone receber e responder automaticamente…');
+}
+function _processSyncProbe(){
+ var p=state&&state.syncProbe;if(!p||!p.id)return;
+ var sent='';try{sent=localStorage.getItem(PROBE_SENT_KEY)||''}catch(e){}
+ if(p.from===DEV&&p.id===sent&&p.ackBy&&p.ackBy!==DEV){
+  var seen='';try{seen=localStorage.getItem(PROBE_SEEN_KEY)||''}catch(e){}
+  if(seen!==p.id){
+   try{localStorage.setItem(PROBE_SEEN_KEY,p.id)}catch(e){}
+   _probeStatus('✅ TESTE COMPLETO: ida e volta confirmadas entre os dois iPhones.');
+   toast('✅ Sincronização de ida e volta confirmada');
+  }
+  return;
+ }
+ if(p.from!==DEV&&!p.ackBy){
+  /* O segundo aparelho recebeu o probe pelo listener real. Responde no MESMO nó,
+     exercitando também o caminho de escrita/ACK de volta. */
+  p.ackBy=DEV;p.ackAt=_ag();p.seq=(Number(p.seq)||0)+1;p.at=_ag();p.by=DEV;
+  _lastUserBusinessSig='';save();
+  _probeStatus('✅ Teste recebido. Resposta automática enviada ao outro iPhone.');
+ }
+}
+
 function _mostrarConflitoSync(local,rem){
  SYNC.conflict={local:norm(JSON.parse(JSON.stringify(local))),remote:norm(JSON.parse(JSON.stringify(rem)))};
  document.getElementById('syncConflictLocal').innerHTML='<b>ESTE IPHONE</b><br>'+esc(_syncResumo(local));
@@ -1712,47 +1806,34 @@ function _mostrarConflitoSync(local,rem){
  _refreshSyncPill();
 }
 function onRemote(v){
- if(!v)return;SYNC.gotRemote=true;var rem=norm(v);SYNC.remoteLast=rem;
- /* Durante o resgate direto, apenas registra o snapshot recebido; a rotina de
-    resgate faz sua própria verificação e é a única que encerra a operação. */
- if(RESGATE42_RUNNING){_refreshSyncPill();return}
- /* Epoch canônico v42: o segundo iPhone deve adotar a semana confirmada sem
-    misturar a cópia velha. */
+ if(!v)return;
+ SYNC.gotRemote=true;
+ var rem=norm(v);SYNC.remoteLast=rem;
+
+ /* Nuvem canônica pós-resgate: se o outro aparelho ainda estiver atrás do epoch,
+    recebe integralmente a semana confirmada. */
  if(Number(rem.syncEpochV42)>Number(state&&state.syncEpochV42||0)){
   var atual=norm(state);
   atual.week=rem.week;atual.weekAt=rem.weekAt;
   atual.drivers=JSON.parse(JSON.stringify(rem.drivers));
   atual.history=_mergeHistoryList(atual.history,rem.history);
   atual.syncEpochV37=Math.max(Number(atual.syncEpochV37)||0,Number(rem.syncEpochV37)||0);
-  atual.syncEpochV41=Math.max(Number(atual.syncEpochV41)||0,Number(rem.syncEpochV41)||0);atual.syncEpochV42=Number(rem.syncEpochV42)||0;
+  atual.syncEpochV41=Math.max(Number(atual.syncEpochV41)||0,Number(rem.syncEpochV41)||0);
+  atual.syncEpochV42=Number(rem.syncEpochV42)||0;
+  atual.syncProbe=_newer(atual.syncProbe,rem.syncProbe)||null;
   atual.rev=Math.max(Number(atual.rev)||0,Number(rem.rev)||0);atual.dev=rem.dev||atual.dev;
-  state=norm(atual);SYNC.conflict=null;SYNC.pendingPush=false;SYNC.remoteLast=rem;
-  persist(false);_lastUserBusinessSig=_businessSig(state);_setDirty(false);
-  var ov41=document.getElementById('ovSyncConflict');if(ov41)ov41.classList.remove('open');
-  filter='all';render();_refreshSyncPill();toast('✅ Semana alinhada com a nuvem confirmada · R$19.191,50');
-  return;
+  state=norm(atual);SYNC.pendingPush=false;persist(false);_lastUserBusinessSig=_businessSig(state);
+  if(_businessIgual(state,rem))_setDirty(false);
+  filter='all';render();_processSyncProbe();_refreshSyncPill();return;
  }
- if(SYNC.pendingResolution){
-  if(!SYNC.conflict)_mostrarConflitoSync(state,rem);
-  _refreshSyncPill();
-  return;
+
+ if(inputFocused()){
+  SYNC.pendingRemote=SYNC.pendingRemote?_mergeState(SYNC.pendingRemote,rem):rem;
+  _refreshSyncPill();return;
  }
- if(SYNC.conflict){_refreshSyncPill();return}
- var resolvido=false;try{resolvido=localStorage.getItem(RESOLVED_KEY)==='1'}catch(e){}
- /* Migração v36→v37: se há diferença funcional, NÃO adivinha. Se outro aparelho já
-    resolveu explicitamente (syncEpochV37), a nuvem passa a ser a fonte canônica. */
- if(!resolvido&&!_businessIgual(state,rem)){
-  if(Number(rem.syncEpochV37)>0){
-   state=rem;persist(false);_lastUserBusinessSig=_businessSig(state);_setDirty(false);
-   try{localStorage.setItem(RESOLVED_KEY,'1')}catch(e){}
-   filter='all';render();_refreshSyncPill();toast('✅ Sincronização alinhada pela nuvem');return;
-  }
-  _mostrarConflitoSync(state,rem);return;
- }
- if(!resolvido){try{localStorage.setItem(RESOLVED_KEY,'1')}catch(e){}}
- if(inputFocused()){SYNC.pendingRemote=SYNC.pendingRemote?_mergeState(SYNC.pendingRemote,rem):rem;_refreshSyncPill();return}
  adopt(rem);
 }
+
 function adopt(v){
  var rem=norm(v),atual=norm(state),junto=_mergeState(rem,atual);
  SYNC.remoteLast=rem;
@@ -1766,6 +1847,7 @@ function adopt(v){
  if(mudaDados){if(!inputFocused())_lastUserBusinessSig=_businessSig(state);filter='all';render();_toastSync()}
  if(precisaNuvem){if(!mudaMeta)state=junto;touch();persist(false);SYNC.pendingPush=true;schedulePush()}
  else if(_businessIgual(state,rem)){SYNC.pendingPush=false;_setDirty(false)}
+ _processSyncProbe();
  _refreshSyncPill();
 }
 function resolverSyncUsarLocal(){
@@ -1874,23 +1956,43 @@ setInterval(function(){ if(SYNC.pendingRemote&&!inputFocused()) adopt(SYNC.pendi
 /* v41: watchdog financeiro. Se existe dado local não confirmado, tenta novamente
    enquanto o app estiver aberto e online. Nunca depende de a conexão cair/subir. */
 setInterval(function(){
- if(SYNC.conflict||SYNC.resolving)return;
+ if(SYNC.resolving||CRIT.busy)return;
  if(SYNC.online&&SYNC.ref&&SYNC.gotRemote&&(SYNC.localDirty||SYNC.pendingPush)){
   clearTimeout(SYNC.pushTimer);push();
  }
 },5000);
+function _resyncSemanalAgora(){
+ if(!SYNC.ref)return;
+ try{firebase.database().goOnline()}catch(e){}
+ try{
+  SYNC.ref.once('value').then(function(s){if(s&&s.val())onRemote(s.val());if(SYNC.localDirty||SYNC.pendingPush)push()}).catch(function(){_scheduleStartSync(2500)});
+ }catch(e){}
+}
 try{
  window.addEventListener('pagehide',function(){try{persist(false)}catch(e){};if(SYNC.ref&&SYNC.gotRemote){try{clearTimeout(SYNC.pushTimer);push()}catch(e){}}});
- document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'){try{persist(false)}catch(e){};if(SYNC.ref&&SYNC.gotRemote){try{clearTimeout(SYNC.pushTimer);push()}catch(e){}}}});
+ document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='hidden'){try{persist(false)}catch(e){};if(SYNC.ref&&SYNC.gotRemote){try{clearTimeout(SYNC.pushTimer);push()}catch(e){}}}
+  else setTimeout(_resyncSemanalAgora,250);
+ });
+ window.addEventListener('pageshow',function(){setTimeout(_resyncSemanalAgora,250)});
+ window.addEventListener('online',function(){setTimeout(_resyncSemanalAgora,100)});
+ window.addEventListener('focus',function(){setTimeout(_resyncSemanalAgora,250)});
 }catch(e){}
+setInterval(function(){if(document.visibilityState==='visible'&&SYNC.online)_resyncSemanalAgora()},30000);
 
 function openSync(){
  var cfg=syncCfg();
+ var igual=SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast);
  document.getElementById('syncStatusMsg').textContent=
   cfg&&cfg.config
-   ?(SYNC.conflict?'Há uma divergência pendente entre este iPhone e a nuvem. Resolva antes de continuar.':
-     (SYNC.online?(_businessIgual(state,SYNC.remoteLast||{})&&!SYNC.localDirty?'Conectado e confirmado: este iPhone está igual à nuvem.':'Conectado, mas ainda existem alterações aguardando confirmação na nuvem.'):'Configurado. Aguardando conexão — as alterações estão na fila e sobem sozinhas.'))
+   ?(SYNC.online&&igual&&!SYNC.localDirty&&!SYNC.pendingPush&&!SYNC.pushInFlight
+      ?'Confirmado: este iPhone está igual à nuvem e não há gravações pendentes.'
+      :(SYNC.online?'Conectado, mas ainda há conteúdo aguardando confirmação da nuvem.':'Offline: alterações locais permanecem na fila persistente e serão reenviadas ao reconectar.'))
    :'Sem sincronização: os dados ficam só neste aparelho. Cole a configuração do Firebase e crie uma chave da família (a mesma nos dois iPhones).';
+ var p=state&&state.syncProbe;
+ if(p&&p.from===DEV&&p.ackBy)_probeStatus('✅ Último teste: ida e volta confirmadas.');
+ else if(p&&p.from!==DEV&&p.ackBy===DEV)_probeStatus('✅ Último teste recebido e respondido por este iPhone.');
+ else _probeStatus('Teste entre aparelhos: pronto para executar.');
  if(cfg){document.getElementById('syncCfgInput').value=JSON.stringify(cfg.config,null,1);document.getElementById('syncKeyInput').value=cfg.key||''}
  document.getElementById('ovSync').classList.add('open');
 }
@@ -1919,7 +2021,8 @@ function disableSync(){
  ask('Desativar sincronização','Este aparelho para de enviar e receber atualizações. Os dados locais continuam intactos.','Desativar',function(){
   localStorage.removeItem('guimas_sync');
   if(SYNC.ref){try{SYNC.ref.off()}catch(e){}}
-  SYNC.ref=null;SYNC.online=false;
+  if(SYNC.connRef){try{SYNC.connRef.off()}catch(e){}}
+  SYNC.ref=null;SYNC.connRef=null;SYNC.online=false;
   setPill('','⚪ sem sync');
   document.getElementById('ovSync').classList.remove('open');
  });
@@ -1934,7 +2037,7 @@ load();
 var _fix26Boot=_limparFechamentosFantasma26Em(state),_fix0209Boot=_repararFechamento0209Em(state);
 if(_fix26Boot||_fix0209Boot){touch();persist(true)}
 try{_lastPersistRaw=JSON.stringify(state);_lastUserBusinessSig=_businessSig(state)}catch(e){}
-_setSaved('Salvo ✓');render();
+_setSaved('No iPhone ✓');render();
 try{startSync()}catch(e){}
 if(_fix26Boot||_fix0209Boot)schedulePush();
 </script>
