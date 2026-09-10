@@ -474,9 +474,10 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
     <div class="askMsg">O Semanal deste iPhone está diferente da cópia salva na nuvem. Para não perder dinheiro, o app não vai misturar os dois automaticamente.</div>
     <div id="syncConflictLocal" class="pprev" style="margin:10px 0"></div>
     <div id="syncConflictCloud" class="pprev" style="margin:10px 0"></div>
-    <button id="syncUseLocal" class="btn primary" onclick="resolverSyncUsarLocal()">Usar ESTE iPhone como correto</button>
-    <button id="syncUseCloud" class="btn ghost" style="margin-top:8px" onclick="resolverSyncUsarNuvem()">Usar os dados da NUVEM</button>
-    <div id="syncConflictStatus" class="askMsg" style="margin-top:10px">Escolha somente no aparelho que você sabe que está correto. Depois, o outro aparelho receberá essa versão.</div>
+    <div class="askMsg" style="margin-top:10px"><b>Modo diagnóstico seguro:</b> nenhuma das opções abaixo altera a nuvem.</div>
+    <button id="syncExportLocal" class="btn primary" onclick="exportarBackupDiagnostico()">💾 Exportar backup DESTE iPhone</button>
+    <button id="syncCloseDiag" class="btn ghost" style="margin-top:8px" onclick="fecharConflitoParaConsultar()">Fechar e consultar o Semanal</button>
+    <div id="syncConflictStatus" class="askMsg" style="margin-top:10px">Exporte este arquivo antes de qualquer correção. Depois faça o mesmo no outro iPhone.</div>
   </div>
 </div>
 
@@ -518,7 +519,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=38; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=39; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -1259,7 +1260,10 @@ var DEV=(function(){try{var d=localStorage.getItem('guimas_dev');if(!d){d=uid()+
 var SYNC={ref:null,online:false,pendingPush:false,pendingRemote:null,pushTimer:null,started:false,gotRemote:false,lastToastAt:0,remoteLast:null,localDirty:false,conflict:null,resolving:false,pendingResolution:''};
 var DIRTY_KEY='guimas_semanal_dirty_v37',RESOLVED_KEY='guimas_semanal_sync_v37_resolved',PENDING_RESOLVE_KEY='guimas_semanal_resolve_v38';
 try{SYNC.localDirty=localStorage.getItem(DIRTY_KEY)==='1'}catch(e){}
-try{SYNC.pendingResolution=localStorage.getItem(PENDING_RESOLVE_KEY)||''}catch(e){}
+try{
+ SYNC.pendingResolution='';
+ localStorage.removeItem(PENDING_RESOLVE_KEY);
+}catch(e){}
 function _setDirty(v){SYNC.localDirty=!!v;try{localStorage.setItem(DIRTY_KEY,v?'1':'0')}catch(e){};_refreshSyncPill()}
 function _refreshSyncPill(){
  if(!SYNC.ref){setPill('','⚪ sem sync');return}
@@ -1275,6 +1279,30 @@ function _syncResolutionStatus(txt,busy){
  var a=document.getElementById('syncUseLocal'),b=document.getElementById('syncUseCloud');
  if(a)a.disabled=!!busy;
  if(b)b.disabled=!!busy;
+}
+function exportarBackupDiagnostico(){
+ try{
+  var now=new Date(),dev=String(DEV||'iphone').slice(0,8);
+  var nome='diagnostico-semanal-v39-'+dev+'-'+now.getFullYear()+('0'+(now.getMonth()+1)).slice(-2)+('0'+now.getDate()).slice(-2)+'-'+('0'+now.getHours()).slice(-2)+('0'+now.getMinutes()).slice(-2)+'.json';
+  /* Exporta o estado LOCAL COMPLETO, incluindo tombstones/metadados, para auditoria.
+     NÃO escreve nada no Firebase. */
+  var raw=JSON.stringify(norm(state),null,1);
+  var blob=new Blob([raw],{type:'application/json'}),file=null;
+  try{file=new File([blob],nome,{type:'application/json'})}catch(e){}
+  if(file&&navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){
+   navigator.share({files:[file],title:nome}).catch(function(e){
+    if(e&&e.name==='AbortError')return;
+    downloadBlob(blob,nome);
+   });
+  }else downloadBlob(blob,nome);
+  _syncResolutionStatus('Backup local preparado. Salve/compartilhe o arquivo e depois faça o mesmo no outro iPhone.',false);
+ }catch(e){toast('⚠️ Não consegui exportar o diagnóstico')}
+}
+function fecharConflitoParaConsultar(){
+ var ov=document.getElementById('ovSyncConflict');if(ov)ov.classList.remove('open');
+ /* SYNC.conflict permanece ativo: push() continua bloqueado. É somente consulta. */
+ _refreshSyncPill();
+ toast('🔎 Modo consulta — nada será enviado enquanto houver divergência');
 }
 function _guardarResolucaoPendente(tipo){
  SYNC.pendingResolution=tipo||'';
@@ -1386,7 +1414,7 @@ function startSync(){
   firebase.database().ref('.info/connected').on('value',function(s){
    SYNC.online=!!s.val();
    _refreshSyncPill();
-   if(SYNC.online&&SYNC.pendingResolution){_tentarResolucaoPendente();return}
+   if(SYNC.online&&SYNC.pendingResolution){/* v39 diagnóstico: resolução automática desativada */return}
    if(SYNC.online&&SYNC.pendingPush&&!SYNC.conflict)push();
   });
  }).catch(function(err){
@@ -1448,7 +1476,7 @@ function onRemote(v){
  if(!v)return;SYNC.gotRemote=true;var rem=norm(v);SYNC.remoteLast=rem;
  if(SYNC.pendingResolution){
   if(!SYNC.conflict)_mostrarConflitoSync(state,rem);
-  _tentarResolucaoPendente();
+  _refreshSyncPill();
   return;
  }
  if(SYNC.conflict){_refreshSyncPill();return}
