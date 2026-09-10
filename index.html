@@ -459,7 +459,8 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
     <div class="askMsg" id="syncStatusMsg"></div>
     <div class="pprev" id="syncTestStatus" style="margin:10px 0">Teste entre aparelhos: ainda não executado.</div>
     <button class="btn primary" onclick="enviarTesteSyncSeguro()">🧪 Testar ida e volta entre iPhones</button>
-    <div class="askMsg" style="margin:8px 0 14px">Este teste usa o mesmo nó do Semanal, mas não altera nenhum motorista, pagamento, total ou histórico.</div>
+    <button id="syncCloudDiagNormal" class="btn ghost" style="margin-top:8px" onclick="executarDiagnosticoNuvem()">🔎 Diagnosticar nuvem</button>
+    <div class="askMsg" style="margin:8px 0 14px">O diagnóstico apenas lê o estado e testa o ACK da conexão; não altera motorista, pagamento, total ou histórico.</div>
     <div class="synclbl">Configuração do Firebase (cole aqui)</div>
     <textarea class="syncfield" id="syncCfgInput" placeholder='{ "apiKey": "...", "databaseURL": "...", ... }'></textarea>
     <div class="synclbl">Chave da família (a mesma nos dois iPhones)</div>
@@ -524,7 +525,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=43; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=44; var APP_DATE='09/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -1487,10 +1488,13 @@ function resgatarNuvemComPai(){
 }
 
 function executarDiagnosticoNuvem(){
- var btn=document.getElementById('syncCloudDiag');
- if(btn)btn.disabled=true;
- _syncResolutionStatus('Executando diagnóstico: conexão → leitura → transação sem alteração…',true);
- var inicio=Date.now(),cfg=syncCfg(),rel={
+ var btn=document.getElementById('syncCloudDiag'),btnNormal=document.getElementById('syncCloudDiagNormal');
+ if(btn)btn.disabled=true;if(btnNormal)btnNormal.disabled=true;
+ var diagMsg='Executando diagnóstico: conexão → leitura → transação sem alteração…';
+ _syncResolutionStatus(diagMsg,true);_probeStatus(diagMsg);
+ var inicio=Date.now(),cfg=syncCfg(),dirtyStored='',dirtySigStored='';
+ try{dirtyStored=localStorage.getItem(DIRTY_KEY)||'';dirtySigStored=localStorage.getItem(DIRTY_SIG_KEY)||''}catch(e){}
+ var rel={
   appVer:APP_VER,
   geradoEm:new Date().toISOString(),
   dev:DEV,
@@ -1498,7 +1502,14 @@ function executarDiagnosticoNuvem(){
   localRev:Number(state&&state.rev)||0,
   onlineFlag:!!SYNC.online,
   gotRemote:!!SYNC.gotRemote,
+  localDirty:!!SYNC.localDirty,
   pendingPush:!!SYNC.pendingPush,
+  pushInFlight:!!SYNC.pushInFlight,
+  dirtyStored:dirtyStored,
+  dirtySigStoredIgualAtual:dirtySigStored?dirtySigStored===_businessSig(state):null,
+  remoteLastDisponivel:!!SYNC.remoteLast,
+  remoteLastResumo:SYNC.remoteLast?_syncResumo(SYNC.remoteLast):'',
+  localIgualRemoteLast:SYNC.remoteLast?_businessIgual(state,SYNC.remoteLast):false,
   conflitoAtivo:!!SYNC.conflict,
   authUid:'',
   familyHash:'',
@@ -1517,8 +1528,9 @@ function executarDiagnosticoNuvem(){
  try{rel.authUid=(firebase.auth().currentUser&&firebase.auth().currentUser.uid)||''}catch(e){rel.authUid='ERRO:'+String(e&&e.message||e)}
  if(!cfg||!cfg.key||!SYNC.ref){
   rel.readErro='SYNC.ref/configuração indisponível';
-  _syncResolutionStatus('Diagnóstico falhou antes da leitura: referência/configuração indisponível.',false);
-  if(btn)btn.disabled=false;
+  var falhaIni='Diagnóstico falhou antes da leitura: referência/configuração indisponível.';
+  _syncResolutionStatus(falhaIni,false);_probeStatus(falhaIni);
+  if(btn)btn.disabled=false;if(btnNormal)btnNormal.disabled=false;
   _diagDownload(rel,'diagnostico-nuvem-v40-'+String(DEV).slice(0,8)+'.json');
   return;
  }
@@ -1556,13 +1568,11 @@ function executarDiagnosticoNuvem(){
  }).then(function(){
   rel.totalMs=Date.now()-inicio;
   var nome='diagnostico-nuvem-v40-'+String(DEV).slice(0,8)+'-'+Date.now()+'.json';
-  _syncResolutionStatus(
-   rel.readOk
-    ?('Diagnóstico concluído. Nuvem: '+rel.cloudResumo+' · transação: '+(rel.transactionOk?'ACK recebido':'FALHOU')+'. Salve/compartilhe o arquivo.')
-    :('Diagnóstico concluído com falha de leitura: '+rel.readErro),
-   false
-  );
-  if(btn)btn.disabled=false;
+  var fimMsg=rel.readOk
+   ?('Diagnóstico concluído. Nuvem: '+rel.cloudResumo+' · transação: '+(rel.transactionOk?'ACK recebido':'FALHOU')+'. Salve/compartilhe o arquivo.')
+   :('Diagnóstico concluído com falha de leitura: '+rel.readErro);
+  _syncResolutionStatus(fimMsg,false);_probeStatus(fimMsg);
+  if(btn)btn.disabled=false;if(btnNormal)btnNormal.disabled=false;
   _diagDownload(rel,nome);
  });
 }
