@@ -525,7 +525,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=48; var APP_DATE='10/09/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=50; var APP_DATE='10/09/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -646,7 +646,7 @@ function _fieldMeta(d,k){var mm=d&&d.fm&&typeof d.fm==='object'?d.fm:null,fm=mm&
 function _pickRootField(a,b,k){var ma=_fieldMeta(a,k),mb=_fieldMeta(b,k);if(ma.seq!==mb.seq)return mb.seq>ma.seq?{v:b[k],m:mb}:{v:a[k],m:ma};if(ma.at!==mb.at)return mb.at>ma.at?{v:b[k],m:mb}:{v:a[k],m:ma};if(ma.by!==mb.by)return mb.by>ma.by?{v:b[k],m:mb}:{v:a[k],m:ma};return JSON.stringify(b[k])>JSON.stringify(a[k])?{v:b[k],m:mb}:{v:a[k],m:ma}}
 function _markField(d,k){if(!d)return;var old={seq:Number(d.seq)||0,at:Number(d.at)||0,by:String(d.by||'')},n=_ag(),sq=(Number(d.seq)||0)+1;d.fm=d.fm&&typeof d.fm==='object'?d.fm:{};if(!d.fm._legacy)d.fm._legacy=old;d.fm[k]={seq:sq,at:n,by:DEV};d.seq=sq;d.at=n;d.by=DEV}
 function _latestChildAt(d){var x=0;toArr(d&&d.entries).concat(toArr(d&&d.notes)).forEach(function(z){if(z&&!z.del)x=Math.max(x,Number(z.at)||0)});return x}
-function _mergeDriverRoot(a,b){var base=_newer(a,b),out={};for(var k in base)if(Object.prototype.hasOwnProperty.call(base,k)&&k!=='entries'&&k!=='notes')out[k]=base[k];out.fm={};['name','car','color','plate'].forEach(function(k){var p=_pickRootField(a,b,k);out[k]=p.v;out.fm[k]=p.m});out.at=Math.max(Number(a.at)||0,Number(b.at)||0);out.by=(Number(b.at)||0)>(Number(a.at)||0)?b.by:a.by;var _oa=Number(a.ord)||0,_ob=Number(b.ord)||0;out.ord=(_oa&&_ob)?Math.min(_oa,_ob):(_oa||_ob);return out}
+function _mergeDriverRoot(a,b){var base=_newer(a,b),out={};for(var k in base)if(Object.prototype.hasOwnProperty.call(base,k)&&k!=='entries'&&k!=='notes')out[k]=base[k];out.fm={};['name','car','color','plate'].forEach(function(k){var p=_pickRootField(a,b,k);out[k]=p.v;out.fm[k]=p.m});out.at=Math.max(Number(a.at)||0,Number(b.at)||0);var _by=(Number(b.at)||0)>(Number(a.at)||0)?b.by:a.by; if(_by!==undefined)out.by=_by; else if('by' in out)delete out.by;var _oa=Number(a.ord)||0,_ob=Number(b.ord)||0;out.ord=(_oa&&_ob)?Math.min(_oa,_ob):(_oa||_ob);return out}
 
 function _weekOrdem(week,at){
  var p=String(week||'').trim().split('/'),d=parseInt(p[0],10),m=parseInt(p[1],10);if(isNaN(d)||isNaN(m)||m<1||m>12||d<1||d>31)return 0;
@@ -1082,7 +1082,7 @@ function _critTxn(label,mutator,okMsg){
    var base=_mergeState(norm(cur),norm(state)),r;
    try{r=mutator(base)}catch(e){motivo='Erro interno: '+String(e&&e.message||e);return}
    if(r!==true){motivo=String(r||'Conflito entre aparelhos.');return}
-   base.rev=Math.max(_ag(),Number(base.rev)||0,Number(cur&&cur.rev)||0);base.dev=DEV;return norm(base);
+   base.rev=Math.max(_ag(),Number(base.rev)||0,Number(cur&&cur.rev)||0);base.dev=DEV;return _semUndef(norm(base));
   },function(err,committed,snap){
    if(finished||token!==CRIT.token)return;
    finished=true;clearTimeout(CRIT.timer);CRIT.busy=false;CRIT.label='';
@@ -1437,7 +1437,7 @@ function resgatarNuvemComPai(){
    payload=JSON.parse(JSON.stringify(norm(base)));
 
    return _promiseTimeout(
-     SYNC.ref.set(payload).then(function(){return {jaCorreta:false}}),
+     SYNC.ref.set(_semUndef(payload)).then(function(){return {jaCorreta:false}}),
      10000,
      'gravação direta demorou mais de 10 segundos'
    );
@@ -1458,7 +1458,7 @@ function resgatarNuvemComPai(){
    if(!Number(conf.syncEpochV42)){
     var ep=Date.now();
     return _promiseTimeout(
-      SYNC.ref.update({syncEpochV42:ep,rev:Math.max(Number(conf.rev)||0,ep),dev:DEV})
+      SYNC.ref.update(_semUndef({syncEpochV42:ep,rev:Math.max(Number(conf.rev)||0,ep),dev:DEV}))
        .then(function(){return SYNC.ref.once('value')}),
       10000,
       'marcação canônica v42 demorou demais'
@@ -1658,13 +1658,42 @@ function toArr(x){
  if(x&&typeof x==='object') return Object.keys(x).sort(function(a,b){return a-b}).map(function(k){return x[k]});
  return [];
 }
+/* v50 — CAUSA-RAIZ PROVADA (diagnósticos reais de 11/09/2026, dois iPhones).
+   146 registros de motorista em semanas antigas do histórico vieram do Firebase SEM a
+   chave `by`. Ao mesclar, expressões do tipo `out.by = ... ? b.by : a.by` criavam a
+   propriedade com valor `undefined`. O Firebase RTDB REJEITA objetos que contenham
+   `undefined`, então TODA gravação do app falhava: a nuvem congelava, os dois aparelhos
+   ficavam com localDirty/pendingPush eternos (amarelo) e o cadeado não destravava.
+   A transação de diagnóstico parecia funcionar porque devolvia o valor vindo da nuvem,
+   que já está limpo — foi o que mascarou o defeito.
+
+   Defesa em TRÊS camadas (a v49 só tinha a primeira, e por isso foi reprovada):
+     1. _semUndef aplicado em TODAS as gravações (transaction/set/update);
+     2. _mergeDriverRoot deixa de CRIAR a chave `by` quando nenhum lado a possui;
+     3. norm() deixa de CRIAR `carried: undefined` em histórico antigo.
+   Chave ausente e chave com `undefined` significam a mesma coisa, logo nenhum valor
+   financeiro é alterado — a assinatura de negócio permanece idêntica. */
+function _semUndef(x){
+ if(x===undefined)return null;
+ if(x===null||typeof x!=='object')return x;
+ if(Array.isArray(x)){
+  var a=[];for(var i=0;i<x.length;i++){var v=_semUndef(x[i]);if(v!==undefined)a.push(v)}return a;
+ }
+ var o={};
+ Object.keys(x).forEach(function(k){
+  var v=x[k];
+  if(v===undefined)return;           /* omite a chave em vez de gravar undefined */
+  o[k]=_semUndef(v);
+ });
+ return o;
+}
 function norm(s){
  if(!s||typeof s!=='object')s={};var sp=(s.syncProbe&&typeof s.syncProbe==='object')?s.syncProbe:null;var o={week:(typeof s.week==='string'?s.week:''),weekAt:Number(s.weekAt)||0,resetAt:Number(s.resetAt)||0,syncEpochV37:Number(s.syncEpochV37)||0,syncEpochV41:Number(s.syncEpochV41)||0,syncEpochV42:Number(s.syncEpochV42)||0,syncProbe:sp?{id:String(sp.id||''),from:String(sp.from||''),createdAt:Number(sp.createdAt)||0,ackBy:String(sp.ackBy||''),ackAt:Number(sp.ackAt)||0,seq:Number(sp.seq)||0,at:Number(sp.at)||0,by:String(sp.by||'')}:null,rev:s.rev||0,dev:s.dev||'',drivers:[],history:[]};
  toArr(s.drivers).forEach(function(d){if(!d)return;var dd={id:d.id||uid(),name:d.name||'',car:d.car||'',color:d.color||'',plate:d.plate||'',ord:Number(d.ord)||0,fm:(d.fm&&typeof d.fm==='object'?JSON.parse(JSON.stringify(d.fm)):{}),seq:Number(d.seq)||0,at:Number(d.at)||0,by:d.by||'',del:!!d.del,delReason:d.delReason||'',entries:[],notes:[]};
   toArr(d.entries).forEach(function(e){if(e)dd.entries.push({id:e.id||uid(),v:(typeof e.v==='number'?e.v:0),d:e.d||'',s:(e.s==='paid'?'paid':'pend'),seq:Number(e.seq)||0,at:Number(e.at)||0,by:e.by||'',del:!!e.del,delReason:e.delReason||'',originCloseId:e.originCloseId||''})});
   toArr(d.notes).forEach(function(n){if(n)dd.notes.push({id:n.id||uid(),t:n.t||'',seq:Number(n.seq)||0,at:Number(n.at)||0,by:n.by||'',del:!!n.del,delReason:n.delReason||'',originCloseId:n.originCloseId||''})});o.drivers.push(dd)
  });
- toArr(s.history).forEach(function(w){if(!w)return;var hh={id:w.id||uid(),periodKey:w.periodKey||_periodKey(w.week,w.closedAt),week:w.week||'',closedAt:w.closedAt||'',paid:w.paid||0,pend:w.pend||0,all:w.all||0,carried:(typeof w.carried==='number'?w.carried:undefined),text:w.text||'',drivers:toArr(w.drivers),seq:Number(w.seq)||0,at:Number(w.at)||0,by:w.by||'',del:!!w.del,delReason:w.delReason||''};o.history.push(hh)});return o;
+ toArr(s.history).forEach(function(w){if(!w)return;var hh={id:w.id||uid(),periodKey:w.periodKey||_periodKey(w.week,w.closedAt),week:w.week||'',closedAt:w.closedAt||'',paid:w.paid||0,pend:w.pend||0,all:w.all||0,text:w.text||'',drivers:toArr(w.drivers),seq:Number(w.seq)||0,at:Number(w.at)||0,by:w.by||'',del:!!w.del,delReason:w.delReason||''};/* v50 origem B: só define carried quando existir de fato. Antes gravava carried:undefined em histórico antigo e o Firebase rejeitava o objeto inteiro. */if(typeof w.carried==='number')hh.carried=w.carried;o.history.push(hh)});return o;
 }
 function syncCfg(){try{return JSON.parse(localStorage.getItem('guimas_sync')||'null')}catch(e){return null}}
 
@@ -1748,7 +1777,7 @@ function push(){
   SYNC.ref.transaction(function(cur){
    var junto=cur?_mergeState(cur,local):local;
    if(cur&&_businessIgual(junto,cur))return;
-   junto.rev=Math.max(_ag(),Number(local.rev)||0,Number(cur&&cur.rev)||0);junto.dev=DEV;return norm(junto);
+   junto.rev=Math.max(_ag(),Number(local.rev)||0,Number(cur&&cur.rev)||0);junto.dev=DEV;return _semUndef(norm(junto));
   },function(err,committed,snap){
    if(finished||token!==SYNC.pushToken)return;
    finished=true;clearTimeout(SYNC.pushWatch);SYNC.pushInFlight=false;
@@ -1816,7 +1845,7 @@ function _onProbeV47(p){
   var id=String(p.id),fim=false;
   SYNC.probeRef.transaction(function(cur){
    if(!cur||String(cur.id||'')!==id||cur.ackBy)return;
-   cur.ackBy=DEV;cur.ackAt=_ag();return cur;
+   cur.ackBy=DEV;cur.ackAt=_ag();return _semUndef(cur);
   },function(err,committed){
    if(fim)return;fim=true;
    if(!err&&committed)_probeStatus('✅ Teste recebido. Resposta automática enviada ao outro iPhone.');
@@ -1938,7 +1967,7 @@ function _resolverSyncLocalAgora(){
    base.syncEpochV37=Math.max(Number(base.syncEpochV37)||0,ag);
    base.rev=Math.max(ag,Number(base.rev)||0,Number(local.rev)||0);
    base.dev=DEV;
-   return norm(base);
+   return _semUndef(norm(base));
   },function(err,committed,snap){
    finished=true;clearTimeout(timer);SYNC.resolving=false;
    if(err||!committed||!snap||!snap.val()){
@@ -1982,11 +2011,11 @@ function _resolverSyncNuvemAgora(){
   SYNC.ref.transaction(function(cur){
    if(!cur){
     rem.syncEpochV37=Math.max(Number(rem.syncEpochV37)||0,ag);
-    rem.rev=Math.max(Number(rem.rev)||0,ag);rem.dev=DEV;return rem;
+    rem.rev=Math.max(Number(rem.rev)||0,ag);rem.dev=DEV;return _semUndef(norm(rem));
    }
    var base=norm(cur);
    base.syncEpochV37=Math.max(Number(base.syncEpochV37)||0,ag);
-   base.rev=Math.max(Number(base.rev)||0,ag);base.dev=DEV;return base;
+   base.rev=Math.max(Number(base.rev)||0,ag);base.dev=DEV;return _semUndef(norm(base));
   },function(err,committed,snap){
    finished=true;clearTimeout(timer);SYNC.resolving=false;
    if(err||!snap||!snap.val()){

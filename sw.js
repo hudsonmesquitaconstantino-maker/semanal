@@ -1,6 +1,6 @@
 /* GuimasCar Semanal — Service Worker seguro v48
    Navegação/index.html: NETWORK-FIRST. Cache somente como fallback offline. */
-const CACHE='guimas-semanal-shell-v48';
+const CACHE='guimas-semanal-shell-v50';
 const PREFIX='guimas-semanal-shell-v';
 const INDEX=new URL('./index.html',self.registration.scope).href;
 
