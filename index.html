@@ -210,7 +210,7 @@ header{
 .suiteHead{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .suiteEyebrow{font-size:9px;line-height:1.2;font-weight:800;letter-spacing:1.55px;color:#9097A0;margin-bottom:2px}
 .suiteTitle{font-size:24px;line-height:1.02;font-weight:800;letter-spacing:-.75px}
-.headStatus{display:flex;align-items:center;gap:7px;min-width:0}
+.headStatus{display:flex;align-items:center;gap:7px;min-width:0;flex-shrink:0}.suiteHead>div:first-child{flex:1 1 auto;min-width:0}.suiteEyebrow{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.headStatus .saved,.headStatus .syncpill{white-space:nowrap}
 .saved{font-size:10px;font-weight:700;white-space:nowrap}
 .syncpill{
   min-height:34px;display:flex;align-items:center;justify-content:center;
@@ -525,7 +525,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=57; var APP_DATE='14/10/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=58; var APP_DATE='15/10/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -867,6 +867,17 @@ function save(){
     para agrupar toques muito próximos; o estado continua DIRTY até ACK real. */
  saveTimer=setTimeout(function(){schedulePush();},80);
 }
+/* v58/v36 — digitação leve: a letra entra na memória na hora; gravar/marcar pendente/enviar à
+   nuvem só quando a pessoa PARA de digitar (600 ms) ou sai do campo. Antes era um salvamento
+   completo (JSON do estado inteiro + transação na nuvem) a CADA letra — no iPhone travava o
+   teclado. Ao sair do campo, fechar ou mandar o app para o fundo, o pendente é salvo na hora. */
+var _digT=null;
+function saveDigitando(){clearTimeout(_digT);_digT=setTimeout(function(){_digT=null;save()},600)}
+function saveAgora(){if(_digT){clearTimeout(_digT);_digT=null;try{save()}catch(e){}}}
+try{document.addEventListener('focusout',function(){saveAgora()},true);
+ window.addEventListener('pagehide',saveAgora,true);
+ document.addEventListener('visibilitychange',function(){if(document.hidden)saveAgora()},true);}catch(e){}
+
 
 /* ---------- Confirmação própria ---------- */
 var askCb=null;
@@ -962,10 +973,10 @@ function render(){
 /* ---------- Edição ---------- */
 function findD(id){for(var i=0;i<state.drivers.length;i++)if(state.drivers[i].id===id&&!state.drivers[i].del)return state.drivers[i]}
 function findE(d,id){if(!d)return null;for(var i=0;i<d.entries.length;i++)if(d.entries[i].id===id&&!d.entries[i].del)return d.entries[i]}
-function fld(did,f,v){var d=findD(did);if(!d)return;d[f]=v;_markField(d,f);save()}
-function entD(did,eid,v){var e=findE(findD(did),eid);if(!e)return;e.d=v;_mark(e);save()}
-function noteT(did,nid,v){var d=findD(did);if(!d)return;var n=notesAtivas(d).filter(function(x){return x.id===nid})[0];if(!n)return;n.t=v;_mark(n);save()}
-function valInput(inp,did,eid){var e=findE(findD(did),eid);if(!e)return;e.v=parseVal(inp.value);_mark(e);touch();persist(true);_setDirty(true);updateTotals()}
+function fld(did,f,v){var d=findD(did);if(!d)return;d[f]=v;_markField(d,f);saveDigitando()}
+function entD(did,eid,v){var e=findE(findD(did),eid);if(!e)return;e.d=v;_mark(e);saveDigitando()}
+function noteT(did,nid,v){var d=findD(did);if(!d)return;var n=notesAtivas(d).filter(function(x){return x.id===nid})[0];if(!n)return;n.t=v;_mark(n);saveDigitando()}
+function valInput(inp,did,eid){var e=findE(findD(did),eid);if(!e)return;e.v=parseVal(inp.value);_mark(e);updateTotals();saveDigitando()}
 function valBlur(inp,did,eid){var e=findE(findD(did),eid);if(!e)return;e.v=parseVal(inp.value);_mark(e);inp.value=fmt(e.v);inp.classList.toggle('neg',e.v<0);updateTotals();save()}
 function tgl(did,eid){if(LOCK){toast('🔒 Travado — toque no cadeado para liberar');return}var e=findE(findD(did),eid);if(!e)return;e.s=(e.s==='paid'?'pend':'paid');_mark(e);save();render()}
 function addEnt(did){var d=findD(did);if(!d)return;var e={id:uid(),v:0,d:'',s:'pend',at:_ag(),by:DEV,del:false};d.entries.push(e);_mark(d);save();render()}
