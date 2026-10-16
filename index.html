@@ -525,7 +525,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=58; var APP_DATE='15/10/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=59; var APP_DATE='15/10/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -2219,7 +2219,7 @@ html.af.afKb .sheet{max-height:calc(var(--afVvh,100vh) - 12px)!important}
  var vv=window.visualViewport,foco=false,aberto=false,raf=0;
  var toque=false;try{toque=window.matchMedia('(pointer:coarse)').matches||('ontouchstart' in window)}catch(e){}
  var base=window.innerHeight;
- function campo(el){return !!el&&(/^(TEXTAREA|SELECT)$/.test(el.tagName)||(el.tagName==='INPUT'&&!/^(checkbox|radio|file|button|submit|reset|range|color|hidden)$/i.test(el.type||'')))||!!(el&&el.isContentEditable)}
+ function campo(el){return !!el&&(el.tagName==='TEXTAREA'||(el.tagName==='INPUT'&&/^(text|search|tel|email|url|number|password|)$/i.test(el.type||''))||!!el.isContentEditable)&&!el.readOnly&&!el.disabled} /* lista de seleção e data abrem menu no iPhone, sem teclado */
  function aplicar(){
   raf=0;
   if(!foco||window.innerHeight>base)base=Math.max(window.innerHeight,foco?base:0);
@@ -2240,7 +2240,7 @@ html.af.afKb .sheet{max-height:calc(var(--afVvh,100vh) - 12px)!important}
 (function(){
  var de=document.documentElement;if(!de.classList.contains('af'))return;
  var vv=window.visualViewport,raf=0;
- function campo(el){return el&&(/^(TEXTAREA|SELECT)$/.test(el.tagName)||(el.tagName==='INPUT'&&!/^(checkbox|radio|button|submit|range|color|hidden|file)$/i.test(el.type||'')))}
+ function campo(el){return !!el&&(el.tagName==='TEXTAREA'||(el.tagName==='INPUT'&&/^(text|search|tel|email|url|number|password|)$/i.test(el.type||''))||!!el.isContentEditable)&&!el.readOnly&&!el.disabled} /* lista de seleção e data abrem menu no iPhone, sem teclado */
  function rolavel(el){for(var p=el.parentElement;p&&p!==document.body;p=p.parentElement){var o=getComputedStyle(p).overflowY;if((o==='auto'||o==='scroll')&&p.scrollHeight>p.clientHeight+1)return p}return null}
  function mostra(){
   raf=0;if(!de.classList.contains('afKb'))return;
@@ -2347,6 +2347,28 @@ html.af.afKb .sheet{max-height:calc(var(--afVvh,100vh) - 12px)!important}
  try{new MutationObserver(function(){setTimeout(fundo,30)}).observe(document.body,{attributes:true,attributeFilter:['class']})}catch(e){}
  try{new MutationObserver(function(){setTimeout(fundo,30)}).observe(de,{attributes:true,attributeFilter:['class']})}catch(e){}
  window.__afFundo=fundo;
+})();
+/* ===== janelas (dialog) presas onde apareceram =====
+   A janela centralizada se reposicionava a cada mudança de tamanho: no Multas, a 1ª letra da
+   busca do "+ Multa" fazia a janela pular do topo para o meio da tela; o filtro "Só os carros
+   que têm multa" fazia ela descer. Agora, ao abrir, ela fica PRESA na posição em que apareceu
+   e só cresce/encolhe para baixo. Com teclado aberto, sobe para o topo da área visível. */
+(function(){
+ var de=document.documentElement;if(!de.classList.contains('af'))return;
+ function prende(d){
+  if(!d.open){d.style.marginTop='';d.style.marginBottom='';d.style.maxHeight='';d.__afTop=null;return}
+  requestAnimationFrame(function(){requestAnimationFrame(function(){
+   if(!d.open||d.__afTop!=null)return;
+   var t=Math.max(8,Math.round(d.getBoundingClientRect().top));d.__afTop=t;aplica(d)})});
+ }
+ function aplica(d){
+  if(d.__afTop==null)return;
+  var t=de.classList.contains('afKb')?8:d.__afTop;
+  d.style.marginTop=t+'px';d.style.marginBottom='auto';
+  d.style.maxHeight='calc(var(--afVvh,100vh) - '+(t+12)+'px)';
+ }
+ try{new MutationObserver(function(ms){ms.forEach(function(m){if(m.target.tagName==='DIALOG')prende(m.target)})}).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']})}catch(e){}
+ try{new MutationObserver(function(){[].slice.call(document.querySelectorAll('dialog[open]')).forEach(aplica)}).observe(de,{attributes:true,attributeFilter:['class']})}catch(e){}
 })();
 </script>
 
