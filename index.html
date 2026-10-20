@@ -525,7 +525,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=61; var APP_DATE='20/10/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=62; var APP_DATE='20/10/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -803,15 +803,23 @@ function _driverOrd(d){
    Motoristas novos vêm depois, na ordem de cadastro fixada em d.ord (carimbo de
    criação que sincroniza entre aparelhos). Novos antigos sem ord (=0) mantêm a ordem
    estável por id, como já era, e ficam antes dos criados após esta versão. */
+/* v61 (pedido do Hudson 20/10/2026): motoristas em ORDEM ALFABÉTICA pelo nome; quem não tem carro
+   (sem placa) vai para o final, também em ordem alfabética. Motorista criado agora neste aparelho fica
+   no fim da lista até a próxima abertura do app, para o cartão não pular de lugar enquanto é preenchido. */
+var _novosSessao={};
+function _ordNome(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase()}
 function _ordenaDrivers(lista){
- return _active(lista).map(function(d,i){return{d:d,i:i,o:_driverOrd(d)}}).sort(function(a,b){
-  var ak=(a.o===null),bk=(b.o===null);
-  if(!ak&&!bk)return a.o-b.o;      /* ambos conhecidos: ordem de tabela */
-  if(!ak&&bk)return -1;            /* conhecido sempre antes de novo */
-  if(ak&&!bk)return 1;
-  var ao=Number(a.d&&a.d.ord)||0,bo=Number(b.d&&b.d.ord)||0; /* ambos novos */
-  if(ao!==bo)return ao-bo;         /* por ordem de cadastro persistente */
-  return String(a.d&&a.d.id||'').localeCompare(String(b.d&&b.d.id||'')); /* estável */
+ return _active(lista).map(function(d,i){return{d:d,i:i}}).sort(function(a,b){
+  var na=_novosSessao[a.d.id]?1:0,nb=_novosSessao[b.d.id]?1:0;
+  if(na!==nb)return na-nb;                                   /* recém-criado aqui: no fim */
+  if(na&&nb)return (_novosSessao[a.d.id]-_novosSessao[b.d.id]);
+  var ca=String(a.d.plate||'').trim()?0:1,cb=String(b.d.plate||'').trim()?0:1;
+  if(ca!==cb)return ca-cb;                                   /* sem carro: no fim */
+  var xa=_ordNome(a.d.name),xb=_ordNome(b.d.name);
+  if(!xa!==!xb)return xa?-1:1;                               /* sem nome depois dos com nome */
+  var c=xa.localeCompare(xb,'pt');if(c)return c;
+  c=_ordNome(a.d.plate).localeCompare(_ordNome(b.d.plate));if(c)return c;
+  return String(a.d.id||'').localeCompare(String(b.d.id||''));  /* estável */
  }).map(function(x){return x.d});
 }
 function driversAtivos(){return _ordenaDrivers(state.drivers)}
@@ -997,7 +1005,7 @@ function delEnt(did,eid){
 }
 function addNote(did){var d=findD(did);if(!d)return;d.notes.push({id:uid(),t:'',at:_ag(),by:DEV,del:false});_mark(d);save();render()}
 function delNote(did,nid){var d=findD(did);if(!d)return;var n=notesAtivas(d).filter(function(x){return x.id===nid})[0];if(!n)return;n.del=true;n.delReason='user-delete';_mark(n);_mark(d);_persistDeleteNow('Observação excluída')}
-function addDriver(){var n=_ag();state.drivers.push({id:uid(),name:'',car:'',color:'',plate:'',ord:n,fm:{name:{at:n,by:DEV},car:{at:n,by:DEV},color:{at:n,by:DEV},plate:{at:n,by:DEV}},entries:[{id:uid(),v:0,d:'',s:'pend',at:n,by:DEV,del:false}],notes:[],at:n,by:DEV,del:false,delReason:''});save();render();window.scrollTo(0,document.body.scrollHeight)}
+function addDriver(){var n=_ag(),_nid=uid();_novosSessao[_nid]=n;state.drivers.push({id:_nid,name:'',car:'',color:'',plate:'',ord:n,fm:{name:{at:n,by:DEV},car:{at:n,by:DEV},color:{at:n,by:DEV},plate:{at:n,by:DEV}},entries:[{id:uid(),v:0,d:'',s:'pend',at:n,by:DEV,del:false}],notes:[],at:n,by:DEV,del:false,delReason:''});save();render();setTimeout(function(){var c=document.getElementById('card-'+_nid);if(c)try{c.scrollIntoView({block:'center',behavior:'smooth'})}catch(e){c.scrollIntoView()}},30)}
 function delDriver(did){var d=findD(did);if(!d)return;ask('Remover motorista','Remover '+(d.name||'este motorista')+(d.plate?' ('+d.plate+')':'')+' e todos os lançamentos dele desta semana?','Remover',function(){
  entriesAtivas(d).forEach(function(e){e.del=true;e.delReason='user-delete';_mark(e)});
  notesAtivas(d).forEach(function(n){n.del=true;n.delReason='user-delete';_mark(n)});
