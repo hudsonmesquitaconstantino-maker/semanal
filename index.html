@@ -951,10 +951,10 @@ function render(){
  driversAtivos().forEach(function(d){
   if(!matchFilter(d))return;shown++;
   html+='<div class="card" id="card-'+d.id+'"><div class="card-head">'
-   +'<div class="plate"><div class="bar"></div><input value="'+esc(d.plate)+'" placeholder="—" oninput="this.value=this.value.toUpperCase();fld(\''+d.id+'\',\'plate\',this.value)"></div>'
+   +'<div class="plate"><div class="bar"></div><input value="'+esc(d.plate)+'" placeholder="—" readonly onclick="semEscolherCarro(\''+d.id+'\')" oninput="this.value=this.value.toUpperCase();fld(\''+d.id+'\',\'plate\',this.value)"></div>'
    +'<div class="who"><input class="nm" value="'+esc(d.name)+'" placeholder="Nome" oninput="fld(\''+d.id+'\',\'name\',this.value)">'
-   +'<div class="carrow"><input class="car" value="'+esc(d.car)+'" placeholder="Carro/ano" oninput="fld(\''+d.id+'\',\'car\',this.value)">'
-   +'<input class="cor" value="'+esc(d.color)+'" placeholder="Cor" oninput="fld(\''+d.id+'\',\'color\',this.value)"></div></div>'
+   +'<div class="carrow"><input class="car" value="'+esc(d.car)+'" placeholder="Carro/ano" readonly onclick="semEscolherCarro(\''+d.id+'\')" oninput="fld(\''+d.id+'\',\'car\',this.value)">'
+   +'<input class="cor" value="'+esc(d.color)+'" placeholder="Cor" readonly onclick="semEscolherCarro(\''+d.id+'\')" oninput="fld(\''+d.id+'\',\'color\',this.value)"></div></div>'
    +'<div class="subtot" id="sub-'+d.id+'"></div></div><div class="entries">';
   entriesAtivas(d).forEach(function(e){
    html+='<div class="entry"><input class="val'+(e.v<0?' neg':'')+'" inputmode="text" value="'+fmt(e.v)+'" onfocus="this.select()" oninput="valInput(this,\''+d.id+'\',\''+e.id+'\')" onblur="valBlur(this,\''+d.id+'\',\''+e.id+'\')">'
@@ -1127,7 +1127,7 @@ function _histMaisRecenteEstado(st){var h=_histAtivoEstado(st).slice().sort(func
 function closeWeek(){
  if(LOCK){toast('🔒 Destrave a edição antes de fechar a semana');return}
  var semana=state.week,tt=totals(driversAtivos());
- ask('Fechar semana '+semana,'Recebido: '+fmt(tt.paid)+' → fecha no histórico como o valor da semana.\n\nAntes de fechar, o app vai conferir a nuvem. Se o outro iPhone tiver alguma alteração ainda não recebida, ela entra no fechamento.\n\nA semana nova abre com o semanal cheio de cada carro, puxado do contrato no Gestão pela placa (carro sem contrato abre zerado). Se algum motorista combinou outro valor, é só alterar.','Fechar semana',function(){
+ ask('Fechar semana '+semana,'Recebido: '+fmt(tt.paid)+' → fecha no histórico como o valor da semana.\n\nAntes de fechar, o app vai conferir a nuvem. Se o outro iPhone tiver alguma alteração ainda não recebida, ela entra no fechamento.\n\nA semana nova abre com o semanal cheio de cada carro, puxado do contrato no Gestão. Só entra quando a placa e o nome do motorista batem com o Gestão; o que não bater (ou não tiver carro) abre zerado. Se algum motorista combinou outro valor, é só alterar.','Fechar semana',function(){
   var now=new Date(),ts=_ag(),stamp=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear(),pk=_periodKey(semana,stamp),next=_proxSemanaLabel(semana,now),closeId='close_'+pk.replace(/[^A-Za-z0-9]/g,'_')+'_'+ts;
   _critTxn('Fechar semana',function(base){
    if(base.week!==semana)return 'Outro aparelho mudou a semana para '+base.week+'. Revise antes de fechar.';
@@ -2151,6 +2151,9 @@ function disableSync(){
      2) compra e venda vigente → valor da parcela semanal;
      3) sem contrato cadastrado, mas carro rodando no Gestão → "semanal padrão" do cadastro do carro.
    Carro sem nada disso fica zerado, como antes.
+   NOME E PLACA TÊM QUE BATER (pedido do Hudson): só preenche se o motorista tem placa E nome no Semanal,
+   a placa existe no Gestão e o nome bate com o motorista do contrato/carro no Gestão (cada palavra do
+   nome escrito no Semanal tem que estar no nome do Gestão, sem acento/maiúscula). Divergiu → fica zerado.
    PROTEÇÕES (mexe com dinheiro):
      • só preenche a linha criada pelo fechamento que NINGUÉM tocou ainda: R$ 0,00, sem texto, não paga,
        com o mesmo carimbo do fechamento e única linha do motorista. Linha editada (até voltar para 0)
@@ -2158,7 +2161,7 @@ function disableSync(){
      • só roda com o app 🟢 sincronizado e sem campo em edição, e grava por transação na nuvem
        (confere de novo na nuvem na hora de gravar). Se o outro iPhone já preencheu, não faz nada;
      • não mexe no histórico, no total recebido nem na semana fechada. */
-var AUTOSEM={busy:false,cache:null,cacheAt:0,lastFetch:0,vistoClose:''};
+var AUTOSEM={busy:false,cache:null,cacheAt:0,lastFetch:0,vistoClose:'',avisado:''};
 function _asPlaca(p){
  p=String(p||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
  if(/^[A-Z]{3}[0-9][0-9][0-9]{2}$/.test(p))p=p.slice(0,4)+'ABCDEFGHIJ'.charAt(Number(p.charAt(4)))+p.slice(5); /* placa antiga → Mercosul */
@@ -2177,7 +2180,7 @@ function _asCandidatos(st){
   var es=entriesAtivas(d);if(es.length!==1)return;var e=es[0];
   if(e.originCloseId!==w.id||Number(e.at)!==Number(w.at))return;
   if((Number(e.v)||0)!==0||String(e.d||'').trim()!==''||e.s==='paid')return;
-  var pl=_asPlaca(d.plate);if(!pl)return;
+  var pl=_asPlaca(d.plate);if(!pl||!String(d.name||'').trim())return; /* sem placa ou sem nome: fica zerado */
   out.push({did:d.id,eid:e.id,placa:pl,nome:d.name||''});
  });
  return out;
@@ -2187,17 +2190,29 @@ function _asValoresGestao(g){
  var carros=(g&&g.carros)||{},cts=(g&&g.contratos)||{},porPlaca={};
  var vendas={};
  Object.keys(cts).forEach(function(k){var x=cts[k];if(!x||x.del||x.tipo!=='venda'||x.status!=='vigente')return;
-  var pk=_asPlaca(x.carro),p=Number(x.venda&&x.venda.parcela)||0;if(p>0&&(!vendas[pk]||String(x.inicio||'')>String(vendas[pk].inicio||'')))vendas[pk]={v:p,inicio:x.inicio||''}});
+  var pk=_asPlaca(x.carro),p=Number(x.venda&&x.venda.parcela)||0;if(p>0&&(!vendas[pk]||String(x.inicio||'')>String(vendas[pk].inicio||'')))vendas[pk]={v:p,inicio:x.inicio||'',nome:(x.locatario&&x.locatario.nome)||''}});
  Object.keys(carros).forEach(function(k){var c=carros[k];if(!c||c.del)return;
-  var pk=_asPlaca(c.placa||k),v=0,fonte='';
+  var pk=_asPlaca(c.placa||k),v=0,fonte='',nomes=[];
   var ct=c.contratoVigenteId&&cts[c.contratoVigenteId];
-  if(ct&&!ct.del&&ct.tipo!=='venda'&&ct.status==='vigente'&&Number(ct.semanal)>0){v=Number(ct.semanal);fonte='contrato'}
-  else if(vendas[pk]){v=vendas[pk].v;fonte='venda'}
+  if(ct&&!ct.del&&ct.tipo!=='venda'&&ct.status==='vigente'&&Number(ct.semanal)>0){v=Number(ct.semanal);fonte='contrato';nomes.push((ct.locatario&&ct.locatario.nome)||'')}
+  else if(vendas[pk]){v=vendas[pk].v;fonte='venda';nomes.push(vendas[pk].nome)}
   else if(c.status==='ativo'&&Number(c.semanalPadrao)>0){v=Number(c.semanalPadrao);fonte='cadastro'}
-  if(v>0)porPlaca[pk]={cents:Math.round(v*100),fonte:fonte};
+  nomes.push(c.motorista||'');
+  nomes=nomes.filter(function(n){return String(n).trim()});
+  if(v>0&&nomes.length)porPlaca[pk]={cents:Math.round(v*100),fonte:fonte,nomes:nomes};
  });
  return porPlaca;
 }
+function _asPalavras(n){
+ return String(n||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9 ]/g,' ').split(/\s+/)
+  .filter(function(w){return w&&['DE','DA','DO','DAS','DOS','E'].indexOf(w)<0});
+}
+/* nome do Semanal bate com o do Gestão: cada palavra escrita no Semanal aparece no nome do Gestão */
+function _asNomeBate(nomeSem,nomesGestao){
+ var ws=_asPalavras(nomeSem);if(!ws.length)return false;
+ return toArr(nomesGestao).some(function(ng){var wg=_asPalavras(ng);return wg.length&&ws.every(function(w){return wg.indexOf(w)>-1})});
+}
+function _asConfere(c,val){var x=val[c.placa];return !!(x&&_asNomeBate(c.nome,x.nomes))}
 function _asLerGestao(){
  if(AUTOSEM.cache&&Date.now()-AUTOSEM.cacheAt<60000)return Promise.resolve(AUTOSEM.cache);
  if(Date.now()-AUTOSEM.lastFetch<300000)return Promise.resolve(null); /* sem carro a preencher: relê no máx. a cada 5 min */
@@ -2223,15 +2238,19 @@ function autoSemanalTick(){
   AUTOSEM.busy=true;
   _asLerGestao().then(function(g){
    if(!g||!_asSyncOk()){AUTOSEM.busy=false;return}
-   var val=_asValoresGestao(g),alvo=_asCandidatos(state).filter(function(c){return val[c.placa]});
-   if(!alvo.length){AUTOSEM.busy=false;return}
+   var val=_asValoresGestao(g),cand2=_asCandidatos(state),alvo=cand2.filter(function(c){return _asConfere(c,val)});
+   if(!alvo.length){AUTOSEM.busy=false;_asAvisoZerados(cand2,w);return}
    _asGravar(val);
   }).catch(function(){AUTOSEM.busy=false});
  }catch(e){AUTOSEM.busy=false}
 }
+function _asAvisoZerados(cand,w){
+ if(!w||AUTOSEM.avisado===w.id||!cand.length)return;AUTOSEM.avisado=w.id;
+ toast('⚠️ Nenhum semanal puxado do Gestão — nome/placa não bateram ou sem contrato: '+cand.map(function(c){return c.nome}).join(', '));
+}
 function _asAplicar(base,val){
  var cand=_asCandidatos(base),ts=_ag(),n=0;
- cand.forEach(function(c){var x=val[c.placa];if(!x)return;
+ cand.forEach(function(c){if(!_asConfere(c,val))return;var x=val[c.placa];
   var d=toArr(base.drivers).filter(function(z){return z&&z.id===c.did})[0];if(!d)return;
   var e=toArr(d.entries).filter(function(z){return z&&z.id===c.eid})[0];if(!e)return;
   e.v=x.cents;e.at=ts;e.by=DEV;n++;
@@ -2255,13 +2274,96 @@ function _asGravar(val){
     _lastUserBusinessSig=_businessSig(state);persist(false);_setDirty(false);render();
    }
    _refreshSyncPill();
-   var sem=_asCandidatos(state).length;
-   toast('💰 Semanal de '+feitos+' carro'+(feitos>1?'s':'')+' puxado do contrato no Gestão'+(sem?' · '+sem+(sem>1?' sem contrato ficaram zerados':' sem contrato ficou zerado'):''));
+   var rest=_asCandidatos(state).map(function(c){return c.nome}).filter(Boolean);
+   AUTOSEM.avisado=_asUltimoFechamento(state)&&_asUltimoFechamento(state).id;
+   toast('💰 Semanal de '+feitos+' carro'+(feitos>1?'s':'')+' puxado do Gestão'+(rest.length?' · zerado (não bateu nome/placa ou sem contrato): '+rest.join(', '):''));
   },false);
  }catch(e){if(!fim){fim=true;clearTimeout(guarda);CRIT.busy=false;AUTOSEM.busy=false}}
 }
 setInterval(autoSemanalTick,4000);
 document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')setTimeout(autoSemanalTick,1500)});
+
+/* ---------- v61: escolher o carro da lista do Gestão (em vez de digitar a placa) ----------
+   Tocando na placa (com a edição destravada) abre a lista dos carros do Gestão, em ordem alfabética.
+   Tocou no carro → preenche placa, carro/ano e cor iguais ao Gestão. À mão, só o VALOR e o NOME do
+   motorista (pedido do Hudson). Carro/ano e cor também abrem a lista. Carro que não está no Gestão:
+   "Digitar a placa à mão" libera placa, carro e cor daquele motorista para digitar, como era antes. */
+(function(){
+ if(document.getElementById('ovCarros'))return;
+ var st=document.createElement('style');st.textContent=
+  '.ccBusca{margin:0 0 8px}.ccLista{overflow:auto}'+
+  '.ccRow{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line,#E5E7EB);cursor:pointer}'+
+  '.ccRow:active{background:#F3F4F6}.ccRow .plate{width:78px}.ccRow .plate input{pointer-events:none}'+
+  '.ccTx{min-width:0;flex:1}.ccTx b{display:block;font-size:15px}.ccTx small{display:block;color:var(--muted,#6B7280);font-size:12.5px;margin-top:1px}'+
+  '.ccTx .ccUso{color:#9a6b00}.ccManual{width:100%;margin-top:10px}';
+ document.head.appendChild(st);
+ document.body.insertAdjacentHTML('beforeend','<div class="overlay" id="ovCarros" onclick="if(event.target===this)this.classList.remove(\'open\')"><div class="sheet">'+
+  '<button class="close" onclick="document.getElementById(\'ovCarros\').classList.remove(\'open\')">✕</button>'+
+  '<h3>Escolher o carro</h3><input class="syncfield ccBusca" id="ccBusca" placeholder="Buscar placa, carro ou motorista" oninput="_ccLista()">'+
+  '<div class="ccLista" id="ccLista"></div>'+
+  '<button class="btn ghost ccManual" onclick="_ccManual()">✏️ Digitar a placa à mão</button></div></div>');
+})();
+var CC={did:'',carros:[]};
+function _ccLerGestao(){
+ if(!SYNC.ref)return Promise.resolve(AUTOSEM.cache);
+ var raiz=SYNC.ref.parent;
+ return Promise.all([raiz.child('gestao/carros').once('value'),raiz.child('gestao/contratos').once('value')]).then(function(r){
+  var g={carros:r[0].val()||{},contratos:r[1].val()||{}};if(!Object.keys(g.carros).length)return AUTOSEM.cache;
+  AUTOSEM.cache=g;AUTOSEM.cacheAt=Date.now();return g;
+ }).catch(function(){return AUTOSEM.cache});
+}
+function _ccSemAcento(t){return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()}
+function _ccMotorista(g,c){
+ var cts=g.contratos||{},ct=c.contratoVigenteId&&cts[c.contratoVigenteId];
+ if(ct&&!ct.del&&ct.status==='vigente'&&ct.locatario&&ct.locatario.nome)return ct.locatario.nome;
+ var pk=_asPlaca(c.placa),nm='';
+ Object.keys(cts).forEach(function(k){var x=cts[k];if(x&&!x.del&&x.tipo==='venda'&&x.status==='vigente'&&_asPlaca(x.carro)===pk&&x.locatario&&x.locatario.nome)nm=x.locatario.nome});
+ return nm||c.motorista||'';
+}
+function semEscolherCarro(did){
+ if(LOCK)return;
+ CC.did=did;document.getElementById('ccBusca').value='';
+ document.getElementById('ccLista').innerHTML='<div class="empty">Carregando os carros do Gestão…</div>';
+ document.getElementById('ovCarros').classList.add('open');
+ _ccLerGestao().then(function(g){
+  if(!g){document.getElementById('ccLista').innerHTML='<div class="empty">Não consegui ler o Gestão agora (sem internet ou sem sincronização).<br>Use "Digitar a placa à mão".</div>';return}
+  var cs=g.carros||{};
+  CC.carros=Object.keys(cs).map(function(k){var c=cs[k];if(!c||c.del)return null;
+   return {pk:_asPlaca(c.placa||k),placa:c.placa||k,nome:c.nome||c.modeloCRLV||'',cor:c.cor||'',motorista:_ccMotorista(g,c),status:c.status||''}}).filter(Boolean)
+   .sort(function(a,b){return _ccSemAcento(a.nome+' '+a.placa).localeCompare(_ccSemAcento(b.nome+' '+b.placa))});
+  _ccLista();
+ });
+}
+function _ccLista(){
+ var q=_ccSemAcento(document.getElementById('ccBusca').value).replace(/[^a-z0-9 ]/g,''),qp=q.replace(/\s/g,'');
+ var uso={};_ativosDoEstado(state).forEach(function(d){if(d.id!==CC.did&&d.plate)uso[_asPlaca(d.plate)]=d.name||'outro motorista'});
+ var h=CC.carros.filter(function(c){if(!q)return true;var t=_ccSemAcento(c.nome+' '+c.cor+' '+c.motorista);return t.indexOf(q)>-1||c.pk.toLowerCase().indexOf(qp)>-1}).map(function(c,i){
+  return '<div class="ccRow" onclick="_ccPegar(\''+c.pk+'\')"><div class="plate"><div class="bar"></div><input value="'+esc(c.placa)+'" readonly tabindex="-1"></div>'+
+   '<div class="ccTx"><b>'+esc(c.nome||'(sem nome)')+'</b><small>'+esc([c.cor,c.motorista||(c.status==='parado'?'parado':'')].filter(Boolean).join(' · '))+'</small>'+
+   (uso[c.pk]?'<small class="ccUso">já está no Semanal com '+esc(uso[c.pk])+'</small>':'')+'</div></div>';
+ }).join('');
+ document.getElementById('ccLista').innerHTML=h||'<div class="empty">Nenhum carro encontrado.</div>';
+}
+function _ccPegar(pk){
+ var c=CC.carros.filter(function(x){return x.pk===pk})[0],d=findD(CC.did);if(!c||!d)return;
+ var novo={plate:String(c.placa).toUpperCase(),car:c.nome,color:c.cor}; /* nome do motorista: sempre digitado à mão */
+ Object.keys(novo).forEach(function(k){if(String(d[k]||'')!==String(novo[k]||'')){d[k]=novo[k];_markField(d,k)}});
+ if(_ccManualDid===CC.did)_ccManualDid='';
+ document.getElementById('ovCarros').classList.remove('open');
+ save();render();toast('🚗 '+c.nome+' · '+c.placa);
+}
+var _ccManualDid='';
+function _ccManual(){
+ var did=CC.did;_ccManualDid=did;document.getElementById('ovCarros').classList.remove('open');
+ var card=document.getElementById('card-'+did);if(!card)return;
+ ['.plate input','input.car','input.cor'].forEach(function(sel){var i=card.querySelector(sel);if(i){i.removeAttribute('readonly');i.onclick=null}});
+ var inp=card.querySelector('.plate input');if(inp){inp.focus();try{inp.select()}catch(e){}}
+}
+/* depois de redesenhar a tela, o motorista em modo manual continua liberado para digitar */
+(function(){var o=window.render;if(typeof o!=='function'||o._cc)return;
+ var w=function(){var r=o.apply(this,arguments);if(_ccManualDid){var card=document.getElementById('card-'+_ccManualDid);
+  if(card)['.plate input','input.car','input.cor'].forEach(function(sel){var i=card.querySelector(sel);if(i){i.removeAttribute('readonly');i.onclick=null}})}return r};
+ w._cc=1;window.render=render=w;})();
 
 /* Modo offline permanente (ativa quando hospedado, ex.: GitHub Pages) */
 if('serviceWorker' in navigator){
