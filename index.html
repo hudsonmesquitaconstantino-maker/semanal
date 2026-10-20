@@ -525,7 +525,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=60; var APP_DATE='15/10/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=61; var APP_DATE='20/10/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -1127,7 +1127,7 @@ function _histMaisRecenteEstado(st){var h=_histAtivoEstado(st).slice().sort(func
 function closeWeek(){
  if(LOCK){toast('🔒 Destrave a edição antes de fechar a semana');return}
  var semana=state.week,tt=totals(driversAtivos());
- ask('Fechar semana '+semana,'Recebido: '+fmt(tt.paid)+' → fecha no histórico como o valor da semana.\n\nAntes de fechar, o app vai conferir a nuvem. Se o outro iPhone tiver alguma alteração ainda não recebida, ela entra no fechamento. A semana nova abre zerada.','Fechar semana',function(){
+ ask('Fechar semana '+semana,'Recebido: '+fmt(tt.paid)+' → fecha no histórico como o valor da semana.\n\nAntes de fechar, o app vai conferir a nuvem. Se o outro iPhone tiver alguma alteração ainda não recebida, ela entra no fechamento.\n\nA semana nova abre com o semanal cheio de cada carro, puxado do contrato no Gestão pela placa (carro sem contrato abre zerado). Se algum motorista combinou outro valor, é só alterar.','Fechar semana',function(){
   var now=new Date(),ts=_ag(),stamp=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear(),pk=_periodKey(semana,stamp),next=_proxSemanaLabel(semana,now),closeId='close_'+pk.replace(/[^A-Za-z0-9]/g,'_')+'_'+ts;
   _critTxn('Fechar semana',function(base){
    if(base.week!==semana)return 'Outro aparelho mudou a semana para '+base.week+'. Revise antes de fechar.';
@@ -2142,6 +2142,126 @@ function disableSync(){
   document.getElementById('ovSync').classList.remove('open');
  });
 }
+
+/* ---------- v61: semana nova já abre com o semanal de cada carro (contrato do Gestão) ----------
+   Pedido do Hudson (20/10/2026). Ao fechar a semana, cada motorista ganha a linha em branco da semana
+   nova (R$ 0,00). Agora, logo depois, o app lê o Gestão (mesma nuvem, mesma chave), acha o carro pela
+   PLACA e preenche essa linha com o valor cheio do semanal do contrato vigente:
+     1) contrato de locação vigente do carro → valor semanal do contrato;
+     2) compra e venda vigente → valor da parcela semanal;
+     3) sem contrato cadastrado, mas carro rodando no Gestão → "semanal padrão" do cadastro do carro.
+   Carro sem nada disso fica zerado, como antes.
+   PROTEÇÕES (mexe com dinheiro):
+     • só preenche a linha criada pelo fechamento que NINGUÉM tocou ainda: R$ 0,00, sem texto, não paga,
+       com o mesmo carimbo do fechamento e única linha do motorista. Linha editada (até voltar para 0)
+       nunca é sobrescrita; motorista novo, linha extra, valor digitado — nada disso é mexido;
+     • só roda com o app 🟢 sincronizado e sem campo em edição, e grava por transação na nuvem
+       (confere de novo na nuvem na hora de gravar). Se o outro iPhone já preencheu, não faz nada;
+     • não mexe no histórico, no total recebido nem na semana fechada. */
+var AUTOSEM={busy:false,cache:null,cacheAt:0,lastFetch:0,vistoClose:''};
+function _asPlaca(p){
+ p=String(p||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+ if(/^[A-Z]{3}[0-9][0-9][0-9]{2}$/.test(p))p=p.slice(0,4)+'ABCDEFGHIJ'.charAt(Number(p.charAt(4)))+p.slice(5); /* placa antiga → Mercosul */
+ return p;
+}
+function _asUltimoFechamento(st){
+ var h=_histAtivoEstado(st).slice().sort(function(a,b){return (Number(b.at)||0)-(Number(a.at)||0)});
+ return h[0]||null;
+}
+/* linhas que ainda estão exatamente como o fechamento criou */
+function _asCandidatos(st){
+ var w=_asUltimoFechamento(st),out=[];
+ if(!w||!w.id||!w.at)return out;
+ if((Number(st.weekAt)||0)!==Number(w.at))return out; /* semana mudou depois do fechamento */
+ _ativosDoEstado(st).forEach(function(d){
+  var es=entriesAtivas(d);if(es.length!==1)return;var e=es[0];
+  if(e.originCloseId!==w.id||Number(e.at)!==Number(w.at))return;
+  if((Number(e.v)||0)!==0||String(e.d||'').trim()!==''||e.s==='paid')return;
+  var pl=_asPlaca(d.plate);if(!pl)return;
+  out.push({did:d.id,eid:e.id,placa:pl,nome:d.name||''});
+ });
+ return out;
+}
+/* valor semanal (em centavos) de cada placa, a partir dos dados do Gestão */
+function _asValoresGestao(g){
+ var carros=(g&&g.carros)||{},cts=(g&&g.contratos)||{},porPlaca={};
+ var vendas={};
+ Object.keys(cts).forEach(function(k){var x=cts[k];if(!x||x.del||x.tipo!=='venda'||x.status!=='vigente')return;
+  var pk=_asPlaca(x.carro),p=Number(x.venda&&x.venda.parcela)||0;if(p>0&&(!vendas[pk]||String(x.inicio||'')>String(vendas[pk].inicio||'')))vendas[pk]={v:p,inicio:x.inicio||''}});
+ Object.keys(carros).forEach(function(k){var c=carros[k];if(!c||c.del)return;
+  var pk=_asPlaca(c.placa||k),v=0,fonte='';
+  var ct=c.contratoVigenteId&&cts[c.contratoVigenteId];
+  if(ct&&!ct.del&&ct.tipo!=='venda'&&ct.status==='vigente'&&Number(ct.semanal)>0){v=Number(ct.semanal);fonte='contrato'}
+  else if(vendas[pk]){v=vendas[pk].v;fonte='venda'}
+  else if(c.status==='ativo'&&Number(c.semanalPadrao)>0){v=Number(c.semanalPadrao);fonte='cadastro'}
+  if(v>0)porPlaca[pk]={cents:Math.round(v*100),fonte:fonte};
+ });
+ return porPlaca;
+}
+function _asLerGestao(){
+ if(AUTOSEM.cache&&Date.now()-AUTOSEM.cacheAt<60000)return Promise.resolve(AUTOSEM.cache);
+ if(Date.now()-AUTOSEM.lastFetch<300000)return Promise.resolve(null); /* sem carro a preencher: relê no máx. a cada 5 min */
+ AUTOSEM.lastFetch=Date.now();
+ var raiz=SYNC.ref.parent;
+ return Promise.all([raiz.child('gestao/carros').once('value'),raiz.child('gestao/contratos').once('value')]).then(function(r){
+  var g={carros:r[0].val()||{},contratos:r[1].val()||{}};
+  if(!Object.keys(g.carros).length)return null;
+  AUTOSEM.cache=g;AUTOSEM.cacheAt=Date.now();return g;
+ }).catch(function(){return null});
+}
+function _asSyncOk(){
+ return !!(SYNC.ref&&SYNC.gotRemote&&SYNC.online&&!SYNC.localDirty&&!SYNC.pendingPush&&!SYNC.pushInFlight&&
+  SYNC.remoteLast&&_businessIgual(state,SYNC.remoteLast)&&!CRIT.busy&&!inputFocused());
+}
+function autoSemanalTick(){
+ if(AUTOSEM.busy)return;
+ try{
+  if(!_asSyncOk())return;
+  var cand=_asCandidatos(state);if(!cand.length)return;
+  /* semana recém-fechada: lê o Gestão na hora, sem esperar o intervalo */
+  var w=_asUltimoFechamento(state);if(w&&AUTOSEM.vistoClose!==w.id){AUTOSEM.vistoClose=w.id;AUTOSEM.lastFetch=0;AUTOSEM.cache=null}
+  AUTOSEM.busy=true;
+  _asLerGestao().then(function(g){
+   if(!g||!_asSyncOk()){AUTOSEM.busy=false;return}
+   var val=_asValoresGestao(g),alvo=_asCandidatos(state).filter(function(c){return val[c.placa]});
+   if(!alvo.length){AUTOSEM.busy=false;return}
+   _asGravar(val);
+  }).catch(function(){AUTOSEM.busy=false});
+ }catch(e){AUTOSEM.busy=false}
+}
+function _asAplicar(base,val){
+ var cand=_asCandidatos(base),ts=_ag(),n=0;
+ cand.forEach(function(c){var x=val[c.placa];if(!x)return;
+  var d=toArr(base.drivers).filter(function(z){return z&&z.id===c.did})[0];if(!d)return;
+  var e=toArr(d.entries).filter(function(z){return z&&z.id===c.eid})[0];if(!e)return;
+  e.v=x.cents;e.at=ts;e.by=DEV;n++;
+ });
+ return n;
+}
+function _asGravar(val){
+ CRIT.busy=true;var feitos=0,fim=false;
+ var guarda=setTimeout(function(){if(fim)return;fim=true;CRIT.busy=false;AUTOSEM.busy=false},10000);
+ try{
+  SYNC.ref.transaction(function(cur){
+   if(!cur)return;
+   var base=_mergeState(norm(cur),norm(state));
+   feitos=_asAplicar(base,val);if(!feitos)return; /* nada a fazer (ex.: outro iPhone já preencheu) */
+   base.rev=Math.max(_ag(),Number(base.rev)||0,Number(cur&&cur.rev)||0);base.dev=DEV;return _semUndef(norm(base));
+  },function(err,committed,snap){
+   if(fim)return;fim=true;clearTimeout(guarda);CRIT.busy=false;AUTOSEM.busy=false;
+   if(err||!committed){if(snap&&snap.val())onRemote(snap.val());_refreshSyncPill();return}
+   if(snap&&snap.val()){
+    state=norm(snap.val());SYNC.remoteLast=norm(snap.val());SYNC.pendingPush=false;
+    _lastUserBusinessSig=_businessSig(state);persist(false);_setDirty(false);render();
+   }
+   _refreshSyncPill();
+   var sem=_asCandidatos(state).length;
+   toast('💰 Semanal de '+feitos+' carro'+(feitos>1?'s':'')+' puxado do contrato no Gestão'+(sem?' · '+sem+(sem>1?' sem contrato ficaram zerados':' sem contrato ficou zerado'):''));
+  },false);
+ }catch(e){if(!fim){fim=true;clearTimeout(guarda);CRIT.busy=false;AUTOSEM.busy=false}}
+}
+setInterval(autoSemanalTick,4000);
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')setTimeout(autoSemanalTick,1500)});
 
 /* Modo offline permanente (ativa quando hospedado, ex.: GitHub Pages) */
 if('serviceWorker' in navigator){
