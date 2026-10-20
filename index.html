@@ -525,7 +525,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 
 <script>
 'use strict';
-var APP_VER=62; var APP_DATE='20/10/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=63; var APP_DATE='20/10/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -803,8 +803,8 @@ function _driverOrd(d){
    Motoristas novos vêm depois, na ordem de cadastro fixada em d.ord (carimbo de
    criação que sincroniza entre aparelhos). Novos antigos sem ord (=0) mantêm a ordem
    estável por id, como já era, e ficam antes dos criados após esta versão. */
-/* v61 (pedido do Hudson 20/10/2026): motoristas em ORDEM ALFABÉTICA pelo nome; quem não tem carro
-   (sem placa) vai para o final, também em ordem alfabética. Motorista criado agora neste aparelho fica
+/* v63 (pedido do Hudson 20/10/2026): lista em ORDEM ALFABÉTICA PELO CARRO (Argo, Cobalt, Cronos…;
+   mesmo carro → pela placa); quem não tem carro (sem placa) vai para o final, em ordem alfabética do nome. Motorista criado agora neste aparelho fica
    no fim da lista até a próxima abertura do app, para o cartão não pular de lugar enquanto é preenchido. */
 var _novosSessao={};
 function _ordNome(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase()}
@@ -815,10 +815,15 @@ function _ordenaDrivers(lista){
   if(na&&nb)return (_novosSessao[a.d.id]-_novosSessao[b.d.id]);
   var ca=String(a.d.plate||'').trim()?0:1,cb=String(b.d.plate||'').trim()?0:1;
   if(ca!==cb)return ca-cb;                                   /* sem carro: no fim */
+  if(!ca){                                                    /* com carro: pelo carro, depois pela placa */
+   var ka=_ordNome(a.d.car),kb=_ordNome(b.d.car);
+   if(!ka!==!kb)return ka?-1:1;                              /* placa sem carro escrito: depois */
+   var c1=ka.localeCompare(kb,'pt',{numeric:true});if(c1)return c1;
+   c1=_ordNome(a.d.plate).localeCompare(_ordNome(b.d.plate));if(c1)return c1;
+  }
   var xa=_ordNome(a.d.name),xb=_ordNome(b.d.name);
   if(!xa!==!xb)return xa?-1:1;                               /* sem nome depois dos com nome */
   var c=xa.localeCompare(xb,'pt');if(c)return c;
-  c=_ordNome(a.d.plate).localeCompare(_ordNome(b.d.plate));if(c)return c;
   return String(a.d.id||'').localeCompare(String(b.d.id||''));  /* estável */
  }).map(function(x){return x.d});
 }
