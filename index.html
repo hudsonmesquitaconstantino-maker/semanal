@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#F3F5F7">
 <meta name="apple-mobile-web-app-title" content="GuimasCar">
 <link rel="apple-touch-icon" sizes="512x512" href="654E0F71-57E7-4657-A6EB-DAC27BAF451A.png?v=2">
@@ -453,14 +453,18 @@ html.gsplOn.gsplFull,html.gsplOn.gsplFull body,html.gsplOn.gsplFull body.locked{
  var el=document.getElementById('gspl');if(!el)return;
  var t0=Date.now(),MIN=1500,MAX=12000,feito=false,de=document.documentElement;
  /* o app desenha por trás da barra de status? (é o que vale de verdade no iPhone, não o que a página pede) */
- var topoSeg=0;try{var pr=document.createElement('div');pr.style.cssText='position:fixed;top:0;left:0;visibility:hidden;padding-top:env(safe-area-inset-top)';document.body.appendChild(pr);topoSeg=pr.offsetHeight;document.body.removeChild(pr)}catch(e){}
- if(topoSeg>0)de.classList.add('gsplFull');
+ /* o app foi instalado desenhando por trás da barra de status? (o iPhone decide isso ao ADICIONAR o ícone à tela
+    de início e não muda depois — hoje só o Gestão). Nos outros, a faixa de cima é pintada pelo iPhone com o fundo da
+    página e fica assim até fechar: por isso eles NÃO pintam o fundo de azul. */
+ var sa0=false;try{sa0=navigator.standalone===true||matchMedia('(display-mode: standalone)').matches}catch(e){}
+ var full=false&&sa0;
+ if(full)de.classList.add('gsplFull');
  de.classList.add('gsplOn');setTimeout(function(){de.classList.remove('gsplOn','gsplFull')},MAX+2000);
  /* cobre a TELA inteira (inclusive atrás da barra de status), como a imagem fixa do iPhone */
  function mede(){
   var sh=0;try{sh=Math.max(screen.height||0,screen.width<screen.height?screen.height:0)}catch(e){}
   var ih=window.innerHeight||document.documentElement.clientHeight||0;
-  var bt=topoSeg>0;
+  var bt=full;
   var sa=false;try{sa=navigator.standalone===true||matchMedia('(display-mode: standalone)').matches}catch(e){}
   if(bt&&sa&&sh>=ih){
    /* app que desenha por trás da barra de status (Gestão): a página começa no topo da TELA e o iPhone
@@ -667,7 +671,7 @@ html.gsplOn.gsplFull,html.gsplOn.gsplFull body,html.gsplOn.gsplFull body.locked{
 
 <script>
 'use strict';
-var APP_VER=69; var APP_DATE='21/10/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=70; var APP_DATE='21/10/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
