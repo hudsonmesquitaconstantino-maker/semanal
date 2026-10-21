@@ -395,7 +395,7 @@ pre.preview{border-radius:13px;padding:11px;font-size:11px;background:#F6F7F8}
 /* enquanto a abertura está na frente, a tela do app fica escondida (no iPhone, barras com desfoque furavam a abertura) */
 html.gsplOn body>*:not(#gspl):not(script):not(style):not(link){visibility:hidden!important}
 /* o iPhone pinta as bordas da tela (atrás da barra de status e o fim da tela) com o fundo da página: fica azul junto */
-html.gsplOn,html.gsplOn body{background:#050E2A!important}
+html.gsplOn.gsplOn,html.gsplOn.gsplOn body,html.gsplOn.gsplOn body.locked{background:#050E2A!important}
 #gspl .gsRas{position:absolute;inset:0;opacity:0;transition:opacity .9s ease}
 #gspl.anda .gsRas{opacity:1}
 #gspl .gsRas i{position:absolute;height:3px;border-radius:3px;left:-40%;width:38%;background:linear-gradient(90deg,transparent,#16B3AA);animation:gsRas 1.6s linear infinite}
@@ -450,7 +450,13 @@ html.gsplOn,html.gsplOn body{background:#050E2A!important}
 (function(){
  var el=document.getElementById('gspl');if(!el)return;
  var t0=Date.now(),MIN=1500,MAX=12000,feito=false,de=document.documentElement;
- de.classList.add('gsplOn');setTimeout(function(){de.classList.remove('gsplOn')},MAX+2000);
+ de.classList.add('gsplOn');
+ /* a faixa da barra de status do iPhone segue a cor do tema: fica azul durante a abertura e volta ao normal depois */
+ var mtc=document.querySelector('meta[name="theme-color"]'),tcOrig=mtc?mtc.getAttribute('content'):null;
+ if(!mtc){mtc=document.createElement('meta');mtc.name='theme-color';document.head.appendChild(mtc)}
+ mtc.setAttribute('content','#050E2A');
+ function tcVolta(){try{if(tcOrig===null)mtc.parentNode.removeChild(mtc);else mtc.setAttribute('content',tcOrig)}catch(e){}}
+ setTimeout(function(){de.classList.remove('gsplOn');tcVolta()},MAX+2000);
  /* cobre a TELA inteira (inclusive atrás da barra de status), como a imagem fixa do iPhone */
  function mede(){
   var sh=0;try{sh=Math.max(screen.height||0,screen.width<screen.height?screen.height:0)}catch(e){}
@@ -495,7 +501,7 @@ html.gsplOn,html.gsplOn body{background:#050E2A!important}
  function abre(){
   if(feito)return;feito=true;
   el.className='anda abre';
-  setTimeout(function(){de.classList.remove('gsplOn');el.className='anda abre sai';cascata()},360);
+  setTimeout(function(){de.classList.remove('gsplOn');tcVolta();el.className='anda abre sai';cascata()},360);
   setTimeout(function(){try{el.parentNode.removeChild(el);var c=document.getElementById('gsplCss');if(c)c.parentNode.removeChild(c)}catch(e){}},1000);
  }
  function pronto(){var falta=MIN-(Date.now()-t0);setTimeout(abre,Math.max(0,falta))}
@@ -662,7 +668,7 @@ html.gsplOn,html.gsplOn body{background:#050E2A!important}
 
 <script>
 'use strict';
-var APP_VER=66; var APP_DATE='21/10/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=67; var APP_DATE='21/10/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -2827,7 +2833,29 @@ html.g21jan.af body{background:#0A0F1C!important}
 html.g21jan.af body>header.afHead,html.g21jan #afScroll,html.g21jan.af body>.afBar{transform:scale(.93);filter:brightness(.85)}
 html.g21jan.af body>header.afHead{border-radius:22px 22px 0 0}
 
+/* ---------- Multas ---------- */
+.hd .logo{display:block!important;width:34px!important;height:34px!important;font-size:0!important;color:transparent!important;border-radius:10px!important;background:#071233 var(--g21logo) center/cover no-repeat!important;box-shadow:0 3px 8px rgba(7,18,51,.28)}
+.mu2big{position:relative;overflow:hidden;border:0!important;border-radius:22px!important;color:#fff!important;
+ background:radial-gradient(120% 120% at 20% 0%,#1B3A8E 0%,#071233 55%,#040A1F 100%)!important;box-shadow:0 2px 4px rgba(7,18,51,.2),0 20px 40px -20px rgba(7,18,51,.6)!important;will-change:transform}
+.mu2big::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(60% 60% at var(--g21lx,30%) var(--g21ly,0%),rgba(255,255,255,.2),transparent 70%)}
+.mu2big::after{content:"";position:absolute;top:30%;left:-40%;width:34%;height:2px;border-radius:2px;pointer-events:none;background:linear-gradient(90deg,transparent,#16B3AA);opacity:.55;animation:g21ras 3.4s linear infinite}
+.mu2big .k,.mu2big .d{position:relative;color:rgba(255,255,255,.72)!important}
+.mu2big b{position:relative;color:#FF9A8E!important}
+#list>article.car{border:0!important;border-radius:20px!important;box-shadow:var(--g21sh)!important;transition:transform .35s var(--g21mola),box-shadow .35s var(--g21mola)!important}
+#list>article.car:active{transform:scale(.98)}
+nav.tabs .seg{position:relative;background:rgba(13,20,36,.06)!important;border-radius:14px!important}
+nav.tabs .seg button{position:relative;z-index:1}
+nav.tabs .seg button.on{background:transparent!important;box-shadow:none!important}
+.fchip{transition:transform .3s var(--g21mola),background .3s,color .3s}
+.fchip:active{transform:scale(.95)}
+.consulta,.aviso{border-radius:20px!important}
+.consulta{border:0!important;box-shadow:var(--g21sh)!important}
+dialog{border-radius:26px!important}
+.hd .btn{transition:transform .35s var(--g21mola)}
+.hd .btn:active{transform:scale(.94)}
+
 @media (prefers-reduced-motion:reduce){
+ .mu2big::after{display:none}
  html.af header .totais::after{display:none}
  html.g21jan.af body>header.afHead,html.g21jan #afScroll,html.g21jan.af body>.afBar{transform:none;filter:none}
 }
@@ -2854,7 +2882,7 @@ var G21_LOGO="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAQDAwQDAwQ
  /* cartão dos totais inclina com o dedo e "respira" parado */
  var hero=null,toque=false,t1=performance.now();
  function ligaHero(){
-  var h=document.querySelector('header .totais');if(!h||h===hero)return;hero=h;
+  var h=document.querySelector('header .totais')||document.querySelector('.mu2big');if(!h||h===hero)return;hero=h;
   function mexe(x,y){var r=h.getBoundingClientRect(),px=(x-r.left)/r.width-.5,py=(y-r.top)/r.height-.5;toque=true;
    h.style.transition='transform .12s linear';h.style.transform='perspective(800px) rotateX('+(-py*7)+'deg) rotateY('+(px*8)+'deg) scale(1.01)';
    h.style.setProperty('--g21lx',(px+.5)*100+'%');h.style.setProperty('--g21ly',(py+.5)*100+'%')}
@@ -2884,6 +2912,7 @@ var G21_LOGO="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAQDAwQDAwQ
   try{
    var nav=document.querySelector('nav.r2nav');if(nav)poeMk(nav,nav.querySelector(':scope>button.on'),'g21mk','nav');
    var tb=document.querySelector('header .tabs');if(tb)poeMk(tb,tb.querySelector(':scope>button.sel'),'g21segmk','tabs');
+   var sg=document.querySelector('nav.tabs .seg');if(sg)poeMk(sg,sg.querySelector(':scope>button.on'),'g21segmk','seg');
   }catch(e){}
  }
 
@@ -2907,7 +2936,7 @@ var G21_LOGO="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAQDAwQDAwQ
    if(!e)return;var y=bh/2-e.getBoundingClientRect().top;e.style.transformOrigin='50% '+Math.round(y)+'px'});
  }
  function janelas(){
-  var on=!!document.querySelector('body>.overlay.open');
+  var on=!!document.querySelector('body>.overlay.open,dialog[open]');
   if(on&&!de.classList.contains('g21jan')){origens();de.classList.add('g21jan')}
   if(!on)de.classList.remove('g21jan');
  }
@@ -2916,11 +2945,14 @@ var G21_LOGO="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAQDAwQDAwQ
  function liga(){
   try{
    var mo=new MutationObserver(agenda);
-   ['list','view','totAll','totPaid','totPend'].forEach(function(id){var e=document.getElementById(id);if(e)mo.observe(e,{childList:true,characterData:true,subtree:id.indexOf('tot')===0})});
+   ['view','totAll','totPaid','totPend'].forEach(function(id){var e=document.getElementById(id);if(e)mo.observe(e,{childList:true,characterData:true,subtree:id.indexOf('tot')===0})});
    var nav=document.querySelector('nav.r2nav');if(nav)mo.observe(nav,{attributes:true,subtree:true,attributeFilter:['class']});
    var tb=document.querySelector('header .tabs');if(tb)mo.observe(tb,{attributes:true,subtree:true,attributeFilter:['class']});
    var mo2=new MutationObserver(janelas);
    [].slice.call(document.querySelectorAll('body>.overlay')).forEach(function(o){mo2.observe(o,{attributes:true,attributeFilter:['class']})});
+   [].slice.call(document.querySelectorAll('dialog')).forEach(function(o){mo2.observe(o,{attributes:true,attributeFilter:['open']})});
+   var sgm=document.querySelector('nav.tabs .seg');if(sgm)mo.observe(sgm,{attributes:true,subtree:true,attributeFilter:['class']});
+   ['list','pgMultas'].forEach(function(id){var e=document.getElementById(id);if(e)mo.observe(e,{childList:true})});
    window.addEventListener('resize',agenda);
   }catch(e){}
   agenda();setTimeout(agenda,400);setTimeout(agenda,1500);
