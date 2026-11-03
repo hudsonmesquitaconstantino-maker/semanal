@@ -687,7 +687,7 @@ html.gsplOn.gsplFull,html.gsplOn.gsplFull body,html.gsplOn.gsplFull body.locked{
 
 <script>
 'use strict';
-var APP_VER=80; var APP_DATE='02/11/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=81; var APP_DATE='02/11/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -3111,6 +3111,47 @@ var PIX_CFG={"sel": "input.val, #pVal", "neg": "input.val", "teclado": true};
  function teclado(r){try{[].forEach.call((r||document).querySelectorAll(SEL),function(el){if(!podeNeg(el)&&el.getAttribute('inputmode')!=='decimal')el.setAttribute('inputmode','decimal')})}catch(e){}}
  if(CFG.teclado){teclado();try{new MutationObserver(function(ms){for(var i=0;i<ms.length;i++)if(ms[i].addedNodes.length){teclado();return}}).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}}
  window._pixFmt=fmt;window._pixCentavos=centavos;
+})();
+
+</script>
+<script>
+/* ===================== v81 — CARRO EXCLUÍDO NO GESTÃO SAI DO SEMANAL (Hudson 02/11/2026) =====================
+   O Gestão é o app principal: carro excluído lá (Excluir de vez) não fica mais no Semanal.
+   - Linha do carro SEM nada lançado nesta semana (nenhum valor, nada pago, nenhuma observação) sai sozinha.
+   - Linha que ainda TEM valor nesta semana fica até a semana fechar (o dinheiro não some sem você ver),
+     marcada "carro excluído no Gestão"; na semana seguinte ela abre vazia e aí sai sozinha.
+   - O histórico das semanas fechadas não muda.
+   - Só sai o que o Gestão marcou como EXCLUÍDO; placa só "diferente" não sai. Carro restaurado no Gestão volta a valer.
+   - Só lê o Gestão; não grava nada lá. */
+var SGX={ap:null,idx:null,at:0,busy:false};
+function sgxLer(forca){
+ if(SGX.busy||!SYNC||!SYNC.ref||!SYNC.gotRemote)return;
+ if(!forca&&SGX.idx&&Date.now()-SGX.at<120000){sgxAplica();return}
+ SGX.busy=true;var raiz=SYNC.ref.parent;
+ Promise.all([raiz.child('gestao/apagados').once('value'),raiz.child('gestao/carros').once('value')]).then(function(r){
+  SGX.busy=false;var ap=r[0].val()||{},cs=r[1].val()||{};
+  if(Object.keys(cs).length<3)return;          /* leitura incompleta do Gestão: não mexe em nada */
+  var idx={};Object.keys(cs).forEach(function(k){var c=cs[k];if(c&&!c.del)idx[_asPlaca(c.placa||k)]=1});
+  SGX.ap=ap;SGX.idx=idx;SGX.at=Date.now();sgxAplica();
+ }).catch(function(){SGX.busy=false})}
+function sgxExcluido(plate){var pk=_asPlaca(plate);if(!pk||!SGX.idx||!SGX.ap||SGX.idx[pk])return 0;return Number(SGX.ap['car_'+pk])||Number(SGX.ap[pk])||0}
+function sgxTemAlgo(d){return entriesAtivas(d).some(function(e){return (Number(e.v)||0)!==0||e.s==='paid'||String(e.d||'').trim()!==''})||notesAtivas(d).length>0}
+function sgxAplica(){
+ if(!SGX.idx||!state)return;var tirou=[];
+ driversAtivos().forEach(function(d){if(!sgxExcluido(d.plate)||sgxTemAlgo(d))return;
+  entriesAtivas(d).forEach(function(e){e.del=true;e.delReason='carro-excluido-gestao';_mark(e)});
+  d.del=true;d.delReason='carro-excluido-gestao';_mark(d);tirou.push(d.plate)});
+ if(tirou.length){_persistDeleteNow('Saiu do Semanal (carro excluído no Gestão): '+tirou.join(', '))}
+ else sgxMarca()}
+function sgxMarca(){try{driversAtivos().forEach(function(d){var el=document.getElementById('card-'+d.id);if(!el)return;var on=!!sgxExcluido(d.plate),tag=el.querySelector('.sgxTag');
+  if(on&&!tag)el.querySelector('.card-head').insertAdjacentHTML('afterend','<div class="sgxTag">🚫 Carro excluído no Gestão — esta linha sai sozinha quando a semana fechar</div>');
+  else if(!on&&tag)tag.remove()})}catch(e){}}
+(function(){
+ var r=window.render;if(typeof r==='function'&&!r._sgx){var w=function(){var x=r.apply(this,arguments);sgxMarca();return x};w._sgx=1;window.render=w}
+ var o=window.onRemote;if(typeof o==='function'&&!o._sgx){var w2=function(){var x=o.apply(this,arguments);setTimeout(function(){sgxLer(false)},500);return x};w2._sgx=1;window.onRemote=w2}
+ setInterval(function(){if(document.visibilityState==='visible')sgxLer(true)},180000);
+ document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')setTimeout(function(){sgxLer(true)},900)});
+ try{var st=document.createElement('style');st.textContent='.sgxTag{margin:6px 10px 0;padding:6px 10px;border-radius:10px;background:#FDECEC;color:#9B1C1C;font-size:12px;font-weight:700}';document.head.appendChild(st)}catch(e){}
 })();
 
 </script>
