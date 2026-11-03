@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#F3F5F7">
+<meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-title" content="GuimasCar">
 <link rel="apple-touch-icon" sizes="512x512" href="654E0F71-57E7-4657-A6EB-DAC27BAF451A.png?v=2">
 <link rel="icon" type="image/png" href="icone.png">
@@ -687,7 +687,7 @@ html.gsplOn.gsplFull,html.gsplOn.gsplFull body,html.gsplOn.gsplFull body.locked{
 
 <script>
 'use strict';
-var APP_VER=81; var APP_DATE='02/11/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=82; var APP_DATE='03/11/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -3155,5 +3155,44 @@ function sgxMarca(){try{driversAtivos().forEach(function(d){var el=document.getE
 })();
 
 </script>
+<style id="modoEscuro">
+/* ===================== MODO ESCURO (padrão iPhone) — Hudson 03/11/2026 =====================
+   Camada única no fim do app: só cor, fundo e sombra. Não mexe em dado, função nem layout.
+   Paleta igual em todos os apps: fundo preto, cartões #1C1C1E, campos #2C2C2E, texto branco/cinza, âmbar, verde, vermelho do iOS. */
+:root:is(#escA,html):not(.gsplPre),:root:is(#escA,html):not(.gsplPre) body:is(#escB,body){background:#000!important;color:#F5F5F7}
+:root:is(#escA,html) body:is(#escB,body) input,:root:is(#escA,html) body:is(#escB,body) select,:root:is(#escA,html) body:is(#escB,body) textarea{color:#F5F5F7!important;border-color:#3A3A3C!important;caret-color:#F0A02E}
+:root:is(#escA,html) body:is(#escB,body) input::placeholder,:root:is(#escA,html) body:is(#escB,body) textarea::placeholder{color:#6E6E76!important}
+:root:is(#escA,html) body:is(#escB,body) input[type=date]::-webkit-calendar-picker-indicator,:root:is(#escA,html) body:is(#escB,body) input[type=month]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.7}
+/* placa continua placa de verdade: branca, letra preta, faixa azul */
+:root:is(#escA,html) body:is(#escB,body) .plate{background:#F2F2F2!important;border-color:#1b1d22!important}
+:root:is(#escA,html) body:is(#escB,body) .plate b,:root:is(#escA,html) body:is(#escB,body) .plate .num,:root:is(#escA,html) body:is(#escB,body) .plate input{color:#111!important;background:transparent!important}
+:root:is(#escA,html) body:is(#escB,body) .plate i,:root:is(#escA,html) body:is(#escB,body) .plate .top{background:#174A8C!important;color:#fff!important}
+:root:is(#escA,html) body:is(#escB,body) .pl{background:#F2F2F2!important;color:#111!important;border-color:#1b1d22!important}
+
+:root{color-scheme:dark;--bg:#000000;--card:#1C1C1E;--ink:#F5F5F7;--muted:#A1A1A8;--line:rgba(255,255,255,.10);
+ --green:#30D158;--green-bg:rgba(48,209,88,.14);--red:#FF6B5E;--red-bg:rgba(255,69,58,.14);--blue:#64A8FF;--primary:#30D158;--amber:#F0A02E;
+ --shadow:inset 0 1px 0 rgba(255,255,255,.05),0 8px 24px rgba(0,0,0,.45);--float:0 14px 36px rgba(0,0,0,.6);
+ --g21sh:inset 0 1px 0 rgba(255,255,255,.05),0 10px 28px rgba(0,0,0,.5);--g21bg:#000000}
+
+:root:is(#escA,html) body:is(#escB,body) .card,:root:is(#escA,html) body:is(#escB,body) .histItem,:root:is(#escA,html) body:is(#escB,body) .sheet,:root:is(#escA,html) body:is(#escB,body) .menu{background:#1C1C1E!important;border-color:#2C2C2E!important}
+:root:is(#escA,html) body:is(#escB,body) .sheet{background:#0E0E10!important}
+:root:is(#escA,html) body:is(#escB,body) .histItem,:root:is(#escA,html) body:is(#escB,body) .menu>button{background:#1C1C1E!important}
+:root:is(#escA,html) body:is(#escB,body) .sheet .histItem{background:#1C1C1E!important}
+:root:is(#escA,html) body:is(#escB,body) .menu>button,:root:is(#escA,html) body:is(#escB,body) .btn.ghost,:root:is(#escA,html) body:is(#escB,body) .mini,:root:is(#escA,html) body:is(#escB,body) .acts>button.mini,:root:is(#escA,html) body:is(#escB,body) .filterbar>button{background:#2C2C2E!important;color:#F5F5F7!important;border-color:#3A3A3C!important}
+:root:is(#escA,html) body:is(#escB,body) .sheet>button.close{background:#2C2C2E!important;color:#F5F5F7!important}
+:root:is(#escA,html) body:is(#escB,body) .entry>button.st.part{background:rgba(240,160,46,.16)!important;border-color:rgba(240,160,46,.35)!important}
+:root:is(#escA,html) body:is(#escB,body) header.afHead,:root:is(#escA,html) body:is(#escB,body) .afHead{background:rgba(0,0,0,.82)!important;-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-color:rgba(255,255,255,.08)!important}
+:root:is(#escA,html) body:is(#escB,body) .periodLine{background:#1C1C1E!important;border-color:#2C2C2E!important}
+:root:is(#escA,html) body:is(#escB,body) .syncpill,:root:is(#escA,html) body:is(#escB,body) .lockpill{background:#2C2C2E!important;color:#A1A1A8!important;border-color:#3A3A3C!important}
+:root:is(#escA,html) body:is(#escB,body) .bottombar,:root:is(#escA,html) body:is(#escB,body) .afBar{background:rgba(28,28,30,.86)!important;-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-color:rgba(255,255,255,.08)!important}
+:root:is(#escA,html) body:is(#escB,body) pre.preview,:root:is(#escA,html) body:is(#escB,body) #whatsText{background:#1C1C1E!important;color:#F5F5F7!important;border-color:#2C2C2E!important}
+:root:is(#escA,html) body:is(#escB,body) .askMsg,:root:is(#escA,html) body:is(#escB,body) .askMsg b{color:#A1A1A8!important}
+:root:is(#escA,html) body:is(#escB,body) .card input,:root:is(#escA,html) body:is(#escB,body) .card textarea{background:transparent!important;border-color:transparent!important}
+:root:is(#escA,html) body:is(#escB,body) .sheet input,:root:is(#escA,html) body:is(#escB,body) .sheet textarea,:root:is(#escA,html) body:is(#escB,body) .sheet select{background:#2C2C2E!important}
+/* placa continua placa: branca com letra preta */
+:root:is(#escA,html) body:is(#escB,body) .plate,:root:is(#escA,html) body:is(#escB,body) .card .plate input{background:#F2F2F2!important;color:#111!important}
+:root:is(#escA,html) body:is(#escB,body) .plate .bar{background:#174A8C!important}
+
+</style>
 </body>
 </html>
