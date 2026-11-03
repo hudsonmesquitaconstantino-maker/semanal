@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-title" content="GuimasCar">
 <link rel="apple-touch-icon" sizes="512x512" href="654E0F71-57E7-4657-A6EB-DAC27BAF451A.png?v=2">
@@ -687,7 +687,7 @@ html.gsplOn.gsplFull,html.gsplOn.gsplFull body,html.gsplOn.gsplFull body.locked{
 
 <script>
 'use strict';
-var APP_VER=83; var APP_DATE='03/11/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=84; var APP_DATE='03/11/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -3228,6 +3228,8 @@ html.af body>.afBar{background-color:rgba(28,28,30,0.74)!important}
 :root:is(#escA,html) body:is(#escB,body) .plate b,:root:is(#escA,html) body:is(#escB,body) .plate .num,:root:is(#escA,html) body:is(#escB,body) .plate input{color:#111!important;background:transparent!important}
 :root:is(#escA,html) body:is(#escB,body) .plate i,:root:is(#escA,html) body:is(#escB,body) .plate .top{background:#174A8C!important;color:#fff!important}
 :root:is(#escA,html) body:is(#escB,body) .pl{background:#F2F2F2!important;color:#111!important;border-color:#1b1d22!important}
+/* faixa do relógio: o iPhone pinta a faixa com a cor desta tirinha fixa (#gsTinta) — agora preta como o app */
+:root:is(#escA,html) #gsTinta,:root:is(#escA,html).g21jan #gsTinta{background:#000!important}
 
 :root{color-scheme:dark;--bg:#000000;--card:#1C1C1E;--ink:#F5F5F7;--muted:#A1A1A8;--line:rgba(255,255,255,.10);
  --green:#30D158;--green-bg:rgba(48,209,88,.14);--red:#FF6B5E;--red-bg:rgba(255,69,58,.14);--blue:#64A8FF;--primary:#30D158;--amber:#F0A02E;
