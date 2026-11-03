@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-title" content="GuimasCar">
 <link rel="apple-touch-icon" sizes="512x512" href="654E0F71-57E7-4657-A6EB-DAC27BAF451A.png?v=2">
@@ -687,7 +687,7 @@ html.gsplOn.gsplFull,html.gsplOn.gsplFull body,html.gsplOn.gsplFull body.locked{
 
 <script>
 'use strict';
-var APP_VER=82; var APP_DATE='03/11/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=83; var APP_DATE='03/11/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -3156,6 +3156,66 @@ function sgxMarca(){try{driversAtivos().forEach(function(d){var el=document.getE
 
 </script>
 <style id="modoEscuro">
+/* camada automática: toda regra clara do app ganha a versão escura */
+header{background-color:rgba(44,44,46,0.92)}
+.htitle input:focus{background-color:#1C1C1E}
+.lockpill{border-color:rgba(255,105,94,.40)}
+.lockpill.open{border-color:rgba(48,209,88,.40)}
+.syncpill{background-color:#2C2C2E}
+.syncpill.wait{background-color:rgba(255,179,64,.16)}
+.syncfield{background-color:#1C1C1E}
+.filterbar button{background-color:#1C1C1E}
+.who input:focus{background-color:#1C1C1E}
+.entry .val{background-color:#1C1C1E}
+.entry .desc{background-color:#1C1C1E}
+.entry input:focus{background-color:#1C1C1E}
+.st{background-color:#1C1C1E}
+.st.part{background-color:rgba(255,179,64,.16);border-color:rgba(255,179,64,.40)}
+.note input{border-color:#3A3A3C;color:#FFB340;background-color:rgba(255,179,64,.16)}
+.mini{background-color:#2C2C2E;color:#A1A1A8}
+.addDriver{border-color:#3A3A3C}
+.bottombar{background-color:#2C2C2E}
+.btn.ghost{background-color:#1C1C1E}
+.sheet .close{background-color:#2C2C2E}
+pre.preview{background-color:#2C2C2E}
+.askMsg{color:#A1A1A8}
+.histItem pre{background-color:#2C2C2E}
+header{background-color:rgba(44,44,46,0.90)}
+.syncpill{background-color:#2C2C2E}
+.syncpill.on{background-color:#2C2C2E}
+.syncpill.wait{background-color:rgba(255,179,64,.16);color:#FFB340}
+.periodLine{background-color:rgba(28,28,30,0.72)}
+#weekLabel:focus{background-color:#1C1C1E}
+.tot{background-color:rgba(28,28,30,0.86)}
+.tot.active{background-color:#1C1C1E}
+.card{background-color:rgba(28,28,30,0.94)}
+.entry .val{background-color:#1C1C1E}
+.entry .desc{background-color:#1C1C1E}
+.entry input:focus{background-color:#1C1C1E}
+.st{background-color:#2C2C2E}
+.st.part{background-color:rgba(255,179,64,.16)}
+.note input{background-color:#1C1C1E}
+.mini{background-color:#2C2C2E}
+.addDriver{background-color:rgba(28,28,30,0.60)}
+.bottombar{background-color:rgba(28,28,30,0.92)}
+.btn.ghost{background-color:#2C2C2E}
+.lockpill{background-color:#2C2C2E}
+.lockpill.open{background-color:#2C2C2E}
+.sheet:before{background-color:#3A3A3C}
+.sheet .close{background-color:#2C2C2E;color:#A1A1A8}
+.menu button{background-color:#1C1C1E}
+.syncfield{background-color:#1C1C1E}
+.askMsg{color:#A1A1A8}
+pre.preview{background-color:#2C2C2E}
+.histItem{background-color:#1C1C1E}
+.amTx{background-color:#2C2C2E;color:#30D158}
+html.af body>header.afHead{background-color:rgba(44,44,46,0.82)!important}
+.syncpill{background-color:rgba(28,28,30,0.85)!important}
+html.af body>.afBar{background-color:rgba(28,28,30,0.74)!important}
+.bottombar .btn.ghost,.bottom .menuBtn{background-color:#1C1C1E!important}
+.g21segmk{background-color:#1C1C1E}
+.sgxTag{background-color:#2C2C2E;color:#FF695E}
+
 /* ===================== MODO ESCURO (padrão iPhone) — Hudson 03/11/2026 =====================
    Camada única no fim do app: só cor, fundo e sombra. Não mexe em dado, função nem layout.
    Paleta igual em todos os apps: fundo preto, cartões #1C1C1E, campos #2C2C2E, texto branco/cinza, âmbar, verde, vermelho do iOS. */
