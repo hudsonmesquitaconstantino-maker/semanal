@@ -687,7 +687,7 @@ html.gsplOn.gsplFull,html.gsplOn.gsplFull body,html.gsplOn.gsplFull body.locked{
 
 <script>
 'use strict';
-var APP_VER=84; var APP_DATE='03/11/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=85; var APP_DATE='03/11/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -3254,6 +3254,9 @@ html.af body>.afBar{background-color:rgba(28,28,30,0.74)!important}
 /* placa continua placa: branca com letra preta */
 :root:is(#escA,html) body:is(#escB,body) .plate,:root:is(#escA,html) body:is(#escB,body) .card .plate input{background:#F2F2F2!important;color:#111!important}
 :root:is(#escA,html) body:is(#escB,body) .plate .bar{background:#174A8C!important}
+
+/* topo sólido: no iPhone o vidro fosco do topo deixava o título e o "sincronizado" borrados */
+:root:is(#escA,html) body:is(#escB,body) header,:root:is(#escA,html) body:is(#escB,body) header.afHead,:root:is(#escA,html) body:is(#escB,body)>header{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;background:#000!important}
 
 </style>
 </body>
