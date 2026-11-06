@@ -687,7 +687,7 @@ html.gsplOn.gsplFull,html.gsplOn.gsplFull body,html.gsplOn.gsplFull body.locked{
 
 <script>
 'use strict';
-var APP_VER=87; var APP_DATE='05/11/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=88; var APP_DATE='05/11/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -3264,6 +3264,14 @@ html.af body>.afBar{background-color:rgba(28,28,30,0.74)!important}
 :root:is(#escA,html) body:is(#escB,body) .bottombar.afBar,:root:is(#escA,html) body:is(#escB,body) .bottombar{left:14px!important;right:14px!important;width:auto!important;max-width:none!important;transform:none!important;bottom:calc(env(safe-area-inset-bottom,0px) + 10px)!important;background:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;border:0!important;box-shadow:none!important;padding:0!important;gap:10px!important;height:60px}
 :root:is(#escA,html) body:is(#escB,body) .bottombar .btn.primary{height:60px!important;border-radius:30px!important;font-size:16.5px!important}
 :root:is(#escA,html) body:is(#escB,body) .bottombar .lockpill,:root:is(#escA,html) body:is(#escB,body) .bottombar .btn.ghost{height:60px!important;min-width:60px!important;border-radius:30px!important;background:rgba(36,36,40,.72)!important;-webkit-backdrop-filter:blur(22px) saturate(180%)!important;backdrop-filter:blur(22px) saturate(180%)!important;border:.5px solid rgba(255,255,255,.14)!important;box-shadow:0 10px 30px rgba(0,0,0,.45)!important;color:#F5F5F7!important;display:flex;align-items:center;justify-content:center;padding:0 16px!important}
+
+/* teclado aberto: esconde a barra flutuante */
+:root:is(#escA,html).tecladoAberto body:is(#escB,body) .bottombar,:root:is(#escA,html).tecladoAberto body:is(#escB,body) .bottombar.afBar{display:none!important}
 </style>
+<script id="tecladoBarra">/* Hudson 06/11: com o teclado aberto, a barra flutuante de baixo some (não cobre o que você está digitando) */
+(function(){var R=document.documentElement;function campo(e){if(!e)return false;var t=e.tagName;if(t==='TEXTAREA'||t==='SELECT'||e.isContentEditable)return true;return t==='INPUT'&&!/^(button|submit|reset|checkbox|radio|range|color|file|image|hidden)$/i.test(e.type||'')}
+function upd(){var vv=window.visualViewport,kb=vv?(window.innerHeight-vv.height*vv.scale>140):false;R.classList.toggle('tecladoAberto',campo(document.activeElement)||kb)}
+document.addEventListener('focusin',upd,true);document.addEventListener('focusout',function(){setTimeout(upd,150)},true);if(window.visualViewport)window.visualViewport.addEventListener('resize',upd)})();
+</script>
 </body>
 </html>
