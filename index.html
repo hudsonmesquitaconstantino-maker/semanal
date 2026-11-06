@@ -687,7 +687,7 @@ html.gsplOn.gsplFull,html.gsplOn.gsplFull body,html.gsplOn.gsplFull body.locked{
 
 <script>
 'use strict';
-var APP_VER=86; var APP_DATE='03/11/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=87; var APP_DATE='05/11/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -3258,6 +3258,12 @@ html.af body>.afBar{background-color:rgba(28,28,30,0.74)!important}
 /* topo sólido: no iPhone o vidro fosco do topo deixava o título e o "sincronizado" borrados */
 :root:is(#escA,html) body:is(#escB,body) header,:root:is(#escA,html) body:is(#escB,body) header.afHead,:root:is(#escA,html) body:is(#escB,body)>header{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;background:#000!important}
 
+</style>
+<style id="estiloApple">
+/* Hudson 05/11: barra de baixo no estilo Apple (cápsula de vidro flutuante), igual ao Financeiro */
+:root:is(#escA,html) body:is(#escB,body) .bottombar.afBar,:root:is(#escA,html) body:is(#escB,body) .bottombar{left:14px!important;right:14px!important;width:auto!important;max-width:none!important;transform:none!important;bottom:calc(env(safe-area-inset-bottom,0px) + 10px)!important;background:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;border:0!important;box-shadow:none!important;padding:0!important;gap:10px!important;height:60px}
+:root:is(#escA,html) body:is(#escB,body) .bottombar .btn.primary{height:60px!important;border-radius:30px!important;font-size:16.5px!important}
+:root:is(#escA,html) body:is(#escB,body) .bottombar .lockpill,:root:is(#escA,html) body:is(#escB,body) .bottombar .btn.ghost{height:60px!important;min-width:60px!important;border-radius:30px!important;background:rgba(36,36,40,.72)!important;-webkit-backdrop-filter:blur(22px) saturate(180%)!important;backdrop-filter:blur(22px) saturate(180%)!important;border:.5px solid rgba(255,255,255,.14)!important;box-shadow:0 10px 30px rgba(0,0,0,.45)!important;color:#F5F5F7!important;display:flex;align-items:center;justify-content:center;padding:0 16px!important}
 </style>
 </body>
 </html>
