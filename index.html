@@ -687,7 +687,7 @@ html.gsplOn.gsplFull,html.gsplOn.gsplFull body,html.gsplOn.gsplFull body.locked{
 
 <script>
 'use strict';
-var APP_VER=89; var APP_DATE='05/11/2026'; // versão desta construção — o verificador compara com a do site
+var APP_VER=90; var APP_DATE='05/11/2026'; // versão desta construção — o verificador compara com a do site
 var KEY='guimas_semanal_v2';
 function safeToReload(){
  try{
@@ -3272,24 +3272,6 @@ html.af body>.afBar{background-color:rgba(28,28,30,0.74)!important}
 (function(){var R=document.documentElement;function campo(e){if(!e)return false;var t=e.tagName;if(t==='TEXTAREA'||t==='SELECT'||e.isContentEditable)return true;return t==='INPUT'&&!/^(button|submit|reset|checkbox|radio|range|color|file|image|hidden)$/i.test(e.type||'')}
 function upd(){var vv=window.visualViewport,kb=vv?(window.innerHeight-vv.height*vv.scale>140):false;R.classList.toggle('tecladoAberto',campo(document.activeElement)||kb)}
 document.addEventListener('focusin',upd,true);document.addEventListener('focusout',function(){setTimeout(upd,150)},true);if(window.visualViewport)window.visualViewport.addEventListener('resize',upd)})();
-</script>
-<script id="barraFirme">/* Hudson 09/11: no iPhone (app da tela de início, iOS 26) a barra flutuante de baixo às vezes "afunda" e fica cortada
-   embaixo — bug do próprio iOS (WebKit 301108: a altura da tela fica errada depois de rolar/abrir janela).
-   Aqui o app mede onde a barra ESTÁ e onde DEVERIA estar (10 px acima da faixa do gesto de início) e corrige na hora. */
-(function(){var SEL='.bottombar';
- var st=window.navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||window.__barraTeste;if(!st)return;
- var probe=document.createElement('div');probe.style.cssText='position:fixed;left:0;bottom:0;width:0;height:0;padding-bottom:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none';
- (document.body||document.documentElement).appendChild(probe);
- var raf=0;function ajusta(){raf=0;var els=document.querySelectorAll(SEL);for(var i=0;i<els.length;i++){var el=els[i],cs=getComputedStyle(el);
-   if(cs.display==='none'||!(cs.position==='fixed'||cs.position==='absolute'))continue;
-   if(innerWidth>innerHeight||document.documentElement.classList.contains('tecladoAberto')){el.style.translate='';continue}
-   var H=window.__barraTela||screen.height;if(!(H>0)||Math.abs(H-innerHeight)>160){el.style.translate='';continue}
-   var cur=parseFloat(String(el.style.translate||'').split(' ')[1])||0,r=el.getBoundingClientRect(),base=r.bottom-cur,alvo=H-(probe.offsetHeight||0)-10,d=Math.round(alvo-base);
-   if(Math.abs(d)<=2||Math.abs(d)>140)d=0;var v=d?'0 '+d+'px':'';if(el.style.translate!==v)el.style.translate=v}}
- function pede(){if(!raf)raf=requestAnimationFrame(ajusta)}
- ['scroll','resize','orientationchange','pageshow','touchend','focusout'].forEach(function(e){addEventListener(e,pede,{passive:true})});
- if(window.visualViewport){visualViewport.addEventListener('resize',pede);visualViewport.addEventListener('scroll',pede)}
- document.addEventListener('visibilitychange',pede);setInterval(pede,1200);setTimeout(pede,300);pede();window._barraAjusta=ajusta})();
 </script>
 </body>
 </html>
